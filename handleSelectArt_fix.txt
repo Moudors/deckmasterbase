@@ -1,0 +1,23 @@
+const handleSelectArt = (artData) => {
+  if (selectedCardForArt && !isViewOnly) {
+    const cardId = selectedCardForArt.id;
+    
+    // 1. Fecha modal primeiro
+    setShowArtSelector(false);
+    setSelectedCardForArt(null);
+    
+    // 2. Update otimista
+    queryClient.setQueryData(["cards", deckId], (old = []) => {
+      if (!old) return old;
+      return old.map((c) => c.id === cardId ? { ...c, ...artData } : c);
+    });
+    
+    // 3. Salva no Firebase  
+    updateCardMutation.mutate({ id: cardId, data: artData });
+    
+    // 4. Força refetch
+    setTimeout(() => {
+      queryClient.refetchQueries({ queryKey: ["cards", deckId] });
+    }, 100);
+  }
+};
