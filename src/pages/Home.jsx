@@ -412,15 +412,15 @@ function Home() {
         )}
 
         {hasDecks && (
-          <div className="w-full max-w-lg overflow-y-auto max-h-[calc(100vh-200px)] pb-24 scrollbar-hide space-y-6">
+          <div className="grid w-full max-w-md gap-6 overflow-y-auto max-h-[calc(100vh-200px)] pb-24 scrollbar-hide">
             {decks?.map((deck) => (
               <div
                 key={deck.id}
-                className="relative cursor-pointer overflow-hidden rounded-xl shadow-lg min-h-[240px] flex-shrink-0"
+                className="relative cursor-pointer overflow-hidden rounded-xl shadow-lg"
                 onClick={() => navigate(`/deckbuilder/${deck.id}`)}
               >
                 <div
-                  className="h-56 w-full bg-cover bg-center"
+                  className="h-40 w-full bg-cover bg-center"
                   style={{
                     backgroundImage: `url(${deck.coverImage || "https://placehold.co/400x200"})`,
                   }}
@@ -434,14 +434,14 @@ function Home() {
                     setSelectedDeck(deck);
                     setDeckOptionsOpen(true);
                   }}
-                  className="absolute top-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 text-lg"
+                  className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
                 >
                   ⚙
                 </button>
 
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-5">
-                  <h2 className="text-2xl font-bold">{deck.name}</h2>
-                  <p className="text-base text-gray-300">{normalizeFormat(deck.format)}</p>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                  <h2 className="text-xl font-bold">{deck.name}</h2>
+                  <p className="text-sm text-gray-300">{normalizeFormat(deck.format)}</p>
                 </div>
               </div>
             ))}
