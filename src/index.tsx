@@ -15,6 +15,9 @@ import { migrateToIndexedDB } from "./lib/storageMigration";
 // 🧹 Sistema de gerenciamento de cache
 import "./lib/cacheManager"; // Apenas importa para executar (side effect)
 
+// ✅ Importar e expor Supabase globalmente
+import { supabase } from "./supabase";
+
 // 🧹 Limpar localStorage se estiver corrompido (one-time fix)
 try {
   const testKey = '_firestore_test';
@@ -50,6 +53,9 @@ const queryClient = new QueryClient({
 // Torna queryClient acessível globalmente para o cacheManager
 if (typeof window !== 'undefined') {
   window.queryClient = queryClient;
+  // ✅ Expor Supabase globalmente para debug
+  window.supabase = supabase;
+  console.log('✅ Supabase exposto globalmente para debug');
 }
 
 const root = ReactDOM.createRoot(

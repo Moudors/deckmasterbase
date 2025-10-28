@@ -3,7 +3,8 @@
 
 -- 1. Tabela de usuários
 CREATE TABLE users (
-  id UUID PRIMARY KEY,
+  id TEXT PRIMARY KEY,  -- ✅ Mudando para TEXT para aceitar UIDs do Supabase Auth
+  uuid UUID DEFAULT uuid_generate_v4(),  -- ✅ UUID separado para uso interno
   display_name TEXT DEFAULT '',
   email TEXT UNIQUE,
   username TEXT DEFAULT '',
@@ -16,7 +17,7 @@ CREATE TABLE users (
 -- 2. Tabela de usernames (para controle de unicidade)
 CREATE TABLE usernames (
   id TEXT PRIMARY KEY,
-  uid UUID REFERENCES users(id) ON DELETE CASCADE,
+  uid TEXT REFERENCES users(id) ON DELETE CASCADE,  -- ✅ Mudando para TEXT
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -25,7 +26,7 @@ CREATE TABLE decks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   format TEXT DEFAULT 'Casual',
-  owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  owner_id TEXT REFERENCES users(id) ON DELETE CASCADE,  -- ✅ Mudando para TEXT
   card_count INTEGER DEFAULT 0,
   cover_image TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

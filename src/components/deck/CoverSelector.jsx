@@ -8,9 +8,7 @@ import React, { useState, useEffect } from "react";
 import { Button } from "../ui/button"; // ✅ corrigido
 import { Loader2, Check, Image as ImageIcon } from "lucide-react";
 import { motion } from "framer-motion";
-import { db } from "../../firebase"; // ✅ corrigido (firebase.ts está em /src)
-import { collection, query, where, getDocs } from "@/firebase";
-import { updateDocSilent } from "@/lib/firestoreSilent";
+import { deckOperations, deckCardOperations } from "@/lib/supabaseOperations";
 
 export default function CoverSelector({ isOpen, onClose, deck, onSelectCover }) {
   const [selectedCover, setSelectedCover] = useState(deck?.cover_image_url || null);
@@ -32,10 +30,7 @@ export default function CoverSelector({ isOpen, onClose, deck, onSelectCover }) 
   const fetchDeckCards = async () => {
     setIsLoading(true);
     try {
-      const cardsRef = collection(db, "cards");
-      const q = query(cardsRef, where("deck_id", "==", deck.id));
-      const querySnapshot = await getDocs(q);
-      const cardsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const cardsData = await deckCardOperations.getDeckCards(deck.id);
       setCards(cardsData);
     } catch (error) {
       console.error("Erro ao buscar cartas do deck:", error);
@@ -59,7 +54,7 @@ export default function CoverSelector({ isOpen, onClose, deck, onSelectCover }) 
       try {
         // Garante que sempre salva a URL art_crop (arte sem frame)
         const artCropUrl = getArtCropUrl(selectedCover);
-        await updateDocSilent("decks", deck.id, {
+        await deckOperations.updateDeck(deck.id, {
           cover_image_url: artCropUrl,
         });
         if (onSelectCover) onSelectCover(artCropUrl);

@@ -1,14 +1,14 @@
-﻿// src/pages/Home.jsx
-import React, { useState } from "react";
+// src/pages/Home.jsx
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { collection, getDocs, query, where } from "@/firebase";
-import { auth, db } from "@/firebase";
+import { useQueryClient } from "@tanstack/react-query";
+import { useDecks } from "@/lib/useUnifiedDecks";
+import { useConnectivity } from "@/lib/connectivityManager";
 import { useAuthState } from "@/hooks/useAuthState";
-import { Search } from "lucide-react";
-import { updateDocSilent, deleteDocSilent, batchDeleteSilent } from "@/lib/firestoreSilent";
-import { localDeckManager } from "@/lib/localDeckManager";
+import { useUserProfile } from "@/hooks/useUserProfile";
+import { Search, WifiOff, AlertCircle } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // 🔗 Import do menu de usuário (popup de perfil)
 import UserMenu from "@/components/user/UserMenu";
@@ -16,398 +16,418 @@ import UserMenu from "@/components/user/UserMenu";
 import SearchRulesDialog from "@/components/rules/SearchRulesDialog";
 // 🔍 Import do componente de busca avançada
 import AdvancedSearchPage from "@/components/advanced-search/AdvancedSearchPage";
-// 🔄 Import do painel de debug de sincronização
-import SyncDebugPanel from "@/components/ui/SyncDebugPanel";
-
-// 🔒 Email do desenvolvedor com acesso ao painel de debug
-const DEV_EMAIL = "moudorskingdom@gmail.com";
 
 function Home() {
   const navigate = useNavigate();
   const [user] = useAuthState();
-  const [showSyncPanel, setShowSyncPanel] = useState(true);
+  const { profile, loading: profileLoading, error: profileError } = useUserProfile(user);
+  const connectivity = useConnectivity();
 
-  // � Normaliza o formato removendo caracteres estranhos
-  const normalizeFormat = (format) => {
-    if (!format) return "Casual";
-    
-    // Remove caracteres especiais e normaliza
-    const normalized = format
-      .replace(/[^\x20-\x7E]/g, '') // Remove caracteres não-ASCII
-      .trim();
-    
-    // Mapeia formatos conhecidos
-    const formatMap = {
-      'Standard': 'Standard',
-      'Modern': 'Modern',
-      'Commander': 'Commander',
-      'Commander 300': 'Commander 300',
-      'Commander 500': 'Commander 500',
-      'Legacy': 'Legacy',
-      'Vintage': 'Vintage',
-      'Pioneer': 'Pioneer',
-      'Pauper': 'Pauper',
-      'Historic': 'Historic',
-      'Casual': 'Casual'
-    };
-    
-    return formatMap[normalized] || normalized || 'Casual';
-  };
+  // Novo sistema unificado de decks
+  const {
+    decks,
+    isLoading,
+    error: decksError,
+    createDeck,
+    updateDeck,
+    deleteDeck,
+    syncDecks,
+    refetch,
+    createError,
+    updateError,
+    deleteError
+  } = useDecks();
 
-  // �🔎 Estados dos modais de busca
+  const queryClient = useQueryClient();
+
+  // Estados para funcionalidades da UI
+  const [selectedDeck, setSelectedDeck] = useState(null);
+  const [deckOptionsOpen, setDeckOptionsOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [formatDialogOpen, setFormatDialogOpen] = useState(false);
+  const [newDeckName, setNewDeckName] = useState("");
+  const [newFormat, setNewFormat] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // Estados para busca (cartas e capa)
   const [searchOptionsOpen, setSearchOptionsOpen] = useState(false);
   const [rulesDialogOpen, setRulesDialogOpen] = useState(false);
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
-
-  // ⭐ Estados da busca de capa
   const [coverSearchOpen, setCoverSearchOpen] = useState(false);
   const [deckForCover, setDeckForCover] = useState(null);
   const [coverSearchTerm, setCoverSearchTerm] = useState("");
   const [coverSuggestions, setCoverSuggestions] = useState([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
 
-  // 🎯 Estados do modal de opções de deck
-  const [deckOptionsOpen, setDeckOptionsOpen] = useState(false);
-  const [selectedDeck, setSelectedDeck] = useState(null);
-  
-  // 📝 Estados do dialog de renomear
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [newDeckName, setNewDeckName] = useState("");
-  
-  // 🗑️ Estados do dialog de apagar deck
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  
-  // 📋 Estados do dialog de mudar formato
-  const [formatDialogOpen, setFormatDialogOpen] = useState(false);
-  const [newFormat, setNewFormat] = useState("");
-  
-  // � Estado para exportar para Arena
-  const [isExporting, setIsExporting] = useState(false);
+  // Hook de debounce para busca de capa
+  const debouncedCoverSearchTerm = useDebounce(coverSearchTerm, 500);
 
-  const queryClient = useQueryClient();
+  // Efeito para busca automática de cartas para capa
+  useEffect(() => {
+    if (debouncedCoverSearchTerm && coverSearchOpen) {
+      handleSearchAutocomplete(debouncedCoverSearchTerm);
+    }
+  }, [debouncedCoverSearchTerm, coverSearchOpen]);
 
-  const { data: decks, isLoading, refetch } = useQuery({
-    queryKey: ["decks", user?.uid],
-    queryFn: async () => {
-      if (!user) return [];
-      
-      console.log("🔍 Buscando decks do Firebase E IndexedDB...");
-      
-      // 1️⃣ Busca decks do Firebase
-      const q = query(collection(db, "decks"), where("ownerId", "==", user.uid));
-      const snapshot = await getDocs(q);
-      const firebaseDecks = snapshot.docs.map((doc) => ({ 
-        id: doc.id, 
-        ...doc.data(),
-        _source: "firebase" 
-      }));
-      
-      // 2️⃣ Busca decks locais do IndexedDB
-      const localDecksObj = await localDeckManager.getLocalDecks();
-      const localDecks = Object.values(localDecksObj)
-        .filter(deck => deck.ownerId === user.uid)
-        .map(deck => ({
-          ...deck,
-          _source: "local"
-        }));
-      
-      // 3️⃣ Combina e ordena por data de criação (mais recentes primeiro)
-      const allDecks = [...firebaseDecks, ...localDecks].sort((a, b) => {
-        const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt);
-        const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt);
-        return dateB - dateA;
-      });
-      
-      console.log(`✅ ${firebaseDecks.length} decks do Firebase + ${localDecks.length} decks locais = ${allDecks.length} total`);
-      
-      return allDecks;
-    },
-    enabled: !!user,
+  // Computadas
+  const hasDecks = decks && decks.length > 0;
+  const isOfflineMode = !connectivity.canSaveData;
+
+  // 🔍 Debug logs para identificar problema
+  console.log("🏠 HOME DEBUG:", {
+    isLoading,
+    decksError,
+    decks: decks ? { length: decks.length, items: decks.map(d => ({ id: d.id, name: d.name })) } : null,
+    hasDecks,
+    user: user ? { id: user.id, email: user.email } : null
   });
 
-  const hasDecks = decks && decks.length > 0;
+  // Funções auxiliares
+  const normalizeFormat = (format) => {
+    if (!format) return "Commander";
+    const lower = format.toLowerCase();
+    if (lower.includes("commander")) {
+      if (lower.includes("300")) return "Commander 300";
+      if (lower.includes("500")) return "Commander 500";
+      return "Commander";
+    }
+    return format.charAt(0).toUpperCase() + format.slice(1);
+  };
 
-  // 🔎 Debounce na busca de capa
-  const debouncedCoverSearch = useDebounce(coverSearchTerm, 500);
-
-  // 🔎 Efeito para buscar sugestões quando debounce estabilizar
-  React.useEffect(() => {
-    if (debouncedCoverSearch.length < 3) {
+  // Função para busca automática de cartas para capa
+  const handleSearchAutocomplete = async (searchTerm) => {
+    if (searchTerm.length < 2) {
       setCoverSuggestions([]);
       return;
     }
-    
-    const fetchSuggestions = async () => {
-      setLoadingSearch(true);
-      try {
-        const res = await fetch(
-          `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(debouncedCoverSearch)}`
-        );
-        const data = await res.json();
-        setCoverSuggestions(data.data || []);
-      } catch {
-        setCoverSuggestions([]);
-      } finally {
-        setLoadingSearch(false);
-      }
-    };
-    
-    fetchSuggestions();
-  }, [debouncedCoverSearch]);
 
-  // 🔎 Handler apenas atualiza o termo (debounce faz o resto)
-  const handleSearchAutocomplete = (term) => {
-    setCoverSearchTerm(term);
-  };
-
-  // ✅ Selecionar carta e salvar como capa
-  const handleSelectCover = async (cardName) => {
-    const deckId = deckForCover.id;
-    
-    // Fecha o modal primeiro
-    setCoverSearchOpen(false);
-    setCoverSearchTerm("");
-    setCoverSuggestions([]);
-    
+    setLoadingSearch(true);
     try {
-      const res = await fetch(
-        `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`
+      // Primeiro buscar autocomplete para nomes
+      const autocompleteResponse = await fetch(
+        `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(searchTerm)}`
       );
-      const data = await res.json();
-      const image = data.image_uris?.art_crop || data.card_faces?.[0]?.image_uris?.art_crop;
-
-      // Atualiza o cache local diretamente (otimista)
-      queryClient.setQueryData(["decks", user?.uid], (oldDecks) => {
-        if (!oldDecks) return oldDecks;
-        return oldDecks.map((deck) =>
-          deck.id === deckId
-            ? { ...deck, coverImage: image }
-            : deck
-        );
-      });
-
-      // Salva em background
-      await updateDocSilent("decks", deckId, { coverImage: image });
-    } catch (err) {
-      console.error("Erro ao salvar capa:", err);
-    }
-  };
-
-  // 📝 Renomear deck
-  const handleRenameDeck = async () => {
-    if (!newDeckName.trim() || !selectedDeck) return;
-    
-    const deckId = selectedDeck.id;
-    const newName = newDeckName.trim();
-    
-    // Fecha TUDO primeiro
-    setRenameDialogOpen(false);
-    setDeckOptionsOpen(false);
-    setNewDeckName("");
-    setSelectedDeck(null);
-    
-    // Atualiza o cache local diretamente (otimista)
-    queryClient.setQueryData(["decks", user?.uid], (oldDecks) => {
-      if (!oldDecks) return oldDecks;
-      return oldDecks.map((deck) =>
-        deck.id === deckId
-          ? { ...deck, name: newName }
-          : deck
-      );
-    });
-    
-    // Atualiza também o cache do Deckbuilder
-    queryClient.setQueryData(["deck", deckId], (oldDeck) => {
-      if (!oldDeck) return oldDeck;
-      return { ...oldDeck, name: newName };
-    });
-    
-    // Salva em background
-    try {
-      await updateDocSilent("decks", deckId, { name: newName });
-    } catch (err) {
-      console.error("Erro ao renomear deck:", err);
-    }
-  };
-
-  // 🗑️ Apagar deck
-  const handleDeleteDeck = async () => {
-    if (!selectedDeck || isDeleting) return;
-    
-    const deckId = selectedDeck.id;
-    const deckName = selectedDeck.name;
-    const isLocalDeck = deckId.startsWith('local_');
-    
-    console.log(`🗑️ Apagando deck ${isLocalDeck ? 'LOCAL' : 'FIREBASE'}:`, deckName);
-    console.log(`🔍 DeckId:`, deckId);
-    console.log(`🔍 Deck completo:`, selectedDeck);
-    setIsDeleting(true);
-    
-    try {
-      if (isLocalDeck) {
-        // ============ DECK LOCAL ============
-        console.log("📦 Deletando deck local do IndexedDB...");
-        
-        // 1️⃣ Busca e deleta todas as cartas locais
-        console.log("🔍 Buscando cartas locais...");
-        const localCards = await localDeckManager.getDeckCards(deckId);
-        console.log(`📊 Encontradas ${localCards.length} cartas locais`);
-        
-        if (localCards.length > 0) {
-          for (const card of localCards) {
-            console.log(`🗑️ Deletando carta local: ${card.card_name}`);
-            await localDeckManager.deleteCardLocally(card.id);
+      if (!autocompleteResponse.ok) throw new Error("Erro na busca");
+      
+      const autocompleteData = await autocompleteResponse.json();
+      const cardNames = autocompleteData.data || [];
+      
+      // Para os primeiros 5 resultados, buscar dados completos para mostrar preview
+      const previewPromises = cardNames.slice(0, 5).map(async (cardName) => {
+        try {
+          const cardResponse = await fetch(
+            `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`
+          );
+          if (cardResponse.ok) {
+            const cardData = await cardResponse.json();
+            return {
+              name: cardName,
+              image_url: getCardImageUrl(cardData, 0), // Usar helper para dual-face
+              has_art_crop: hasArtCrop(cardData), // Usar helper para verificar art_crop
+              is_dual_face: !!cardData.card_faces
+            };
           }
-          console.log(`✅ ${localCards.length} cartas locais deletadas do deck ${deckName}`);
+        } catch (e) {
+          // Se falhar, retornar apenas o nome
+          return { name: cardName, image_url: null, has_art_crop: false };
         }
-        
-        // 2️⃣ Deleta o deck local
-        console.log("🗑️ Deletando deck local...");
-        await localDeckManager.deleteDeckLocally(deckId);
-        console.log("✅ Deck local deletado:", deckName);
-        
-      } else {
-        // ============ DECK FIREBASE ============
-        console.log("☁️ Deletando deck do Firebase...");
-        
-        // 1️⃣ Busca todas as cartas do deck
-        console.log("🔍 Buscando cartas no Firebase...");
-        const cardsQuery = query(collection(db, "cards"), where("deck_id", "==", deckId));
-        const cardsSnapshot = await getDocs(cardsQuery);
-        console.log(`📊 Encontradas ${cardsSnapshot.docs.length} cartas no Firebase`);
-        
-        // 2️⃣ Deleta todas as cartas primeiro
-        const cardIds = cardsSnapshot.docs.map(doc => doc.id);
-        if (cardIds.length > 0) {
-          console.log(`🗑️ Deletando ${cardIds.length} cartas...`);
-          await batchDeleteSilent("cards", cardIds);
-          console.log(`✅ ${cardIds.length} cartas deletadas do deck ${deckName}`);
-        }
-        
-        // 3️⃣ Deleta o deck
-        console.log("🗑️ Deletando deck do Firebase...");
-        await deleteDocSilent("decks", deckId);
-        console.log("✅ Deck do Firebase deletado:", deckName);
-      }
-      
-      // 4️⃣ Atualiza o cache local (otimista)
-      queryClient.setQueryData(["decks", user?.uid], (oldDecks) => {
-        if (!oldDecks) return oldDecks;
-        return oldDecks.filter((deck) => deck.id !== deckId);
+        return { name: cardName, image_url: null, has_art_crop: false };
       });
       
-      // 5️⃣ Invalida queries relacionadas
-      queryClient.removeQueries(["deck", deckId]);
-      queryClient.removeQueries(["cards", deckId]);
+      // Aguardar todas as buscas de preview (com timeout)
+      const previewResults = await Promise.allSettled(previewPromises);
+      const enrichedSuggestions = previewResults.map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
+        return { name: cardNames[index], image_url: null, has_art_crop: false };
+      });
       
-      // 6️⃣ Fecha os modais
+      // Adicionar os nomes restantes sem preview
+      const remainingNames = cardNames.slice(5).map(name => ({
+        name,
+        image_url: null,
+        has_art_crop: false
+      }));
+      
+      setCoverSuggestions([...enrichedSuggestions, ...remainingNames]);
+    } catch (error) {
+      console.error("❌ Erro ao buscar cartas:", error);
+      setCoverSuggestions([]);
+    } finally {
+      setLoadingSearch(false);
+    }
+  };
+
+  // Função para selecionar capa do deck
+  // Função helper para extrair URL de imagem de cartas (incluindo dual-face)
+  const getCardImageUrl = (cardData, preferredFace = 0) => {
+    // Função para extrair imagem de image_uris
+    const extractImageFromUris = (uris) => {
+      if (!uris) return null;
+      return uris.art_crop || uris.large || uris.normal || uris.border_crop;
+    };
+
+    // Se tem image_uris no nível raiz (cartas normais)
+    if (cardData.image_uris) {
+      return extractImageFromUris(cardData.image_uris);
+    }
+
+    // Se tem card_faces (cartas de duas faces)
+    if (cardData.card_faces && cardData.card_faces.length > 0) {
+      // Usar a face especificada ou a primeira
+      const faceIndex = Math.min(preferredFace, cardData.card_faces.length - 1);
+      const selectedFace = cardData.card_faces[faceIndex];
+      
+      if (selectedFace.image_uris) {
+        return extractImageFromUris(selectedFace.image_uris);
+      }
+    }
+
+    return null;
+  };
+
+  // Função helper para verificar se tem art_crop disponível
+  const hasArtCrop = (cardData) => {
+    // Verificar no nível raiz
+    if (cardData.image_uris?.art_crop) return true;
+    
+    // Verificar nas faces
+    if (cardData.card_faces) {
+      return cardData.card_faces.some(face => face.image_uris?.art_crop);
+    }
+    
+    return false;
+  };
+
+  const handleSelectCover = async (cardName) => {
+    console.log('🖼️ COVER FUNCTION - Starting with:', cardName);
+    console.log('🖼️ COVER FUNCTION - DeckForCover:', deckForCover);
+    
+    if (!deckForCover) {
+      console.log('❌ COVER FUNCTION - No deck selected');
+      return;
+    }
+
+    try {
+      console.log('🌐 COVER FUNCTION - Fetching from Scryfall...');
+      const response = await fetch(
+        `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`
+      );
+      
+      console.log('📡 COVER FUNCTION - Response status:', response.status);
+      if (!response.ok) throw new Error("Carta não encontrada");
+      
+      const cardData = await response.json();
+      console.log('🎴 COVER FUNCTION - Card data:', cardData.name);
+      console.log('🔍 COVER FUNCTION - Card type:', {
+        has_image_uris: !!cardData.image_uris,
+        has_card_faces: !!cardData.card_faces,
+        faces_count: cardData.card_faces?.length || 0
+      });
+      
+      // Usar função helper para extrair imagem (suporta dual-face)
+      const imageUrl = getCardImageUrl(cardData, 0); // Usar primeira face por padrão
+      
+      console.log('🖼️ COVER FUNCTION - Available image formats:');
+      if (cardData.image_uris) {
+        console.log('  Normal card:', {
+          art_crop: cardData.image_uris?.art_crop ? '✅' : '❌',
+          large: cardData.image_uris?.large ? '✅' : '❌',
+          normal: cardData.image_uris?.normal ? '✅' : '❌',
+          border_crop: cardData.image_uris?.border_crop ? '✅' : '❌'
+        });
+      }
+      if (cardData.card_faces) {
+        console.log('  Dual-face card:');
+        cardData.card_faces.forEach((face, index) => {
+          console.log(`    Face ${index + 1} (${face.name}):`, {
+            art_crop: face.image_uris?.art_crop ? '✅' : '❌',
+            large: face.image_uris?.large ? '✅' : '❌',
+            normal: face.image_uris?.normal ? '✅' : '❌',
+            border_crop: face.image_uris?.border_crop ? '✅' : '❌'
+          });
+        });
+      }
+      console.log('🖼️ COVER FUNCTION - Selected image URL:', imageUrl);
+      
+      if (imageUrl) {
+        console.log('💾 COVER FUNCTION - Calling updateDeck...');
+        console.log('🔧 COVER FUNCTION - Deck ID:', deckForCover.id);
+        console.log('🔧 COVER FUNCTION - Updates:', { cover_image_url: imageUrl });
+        
+        const result = await updateDeck({ deckId: deckForCover.id, updates: { cover_image_url: imageUrl } });
+        console.log('✅ COVER FUNCTION - UpdateDeck result:', result);
+        
+        setCoverSearchOpen(false);
+        setDeckForCover(null);
+        setCoverSearchTerm("");
+        setCoverSuggestions([]);
+        console.log('🏁 COVER FUNCTION - Process completed successfully');
+      } else {
+        console.log('❌ COVER FUNCTION - No image URL found');
+      }
+    } catch (error) {
+      console.error("❌ COVER FUNCTION - Error:", error);
+      console.error("❌ COVER FUNCTION - Error details:", {
+        message: error.message,
+        stack: error.stack,
+        cardName,
+        deckId: deckForCover?.id
+      });
+      alert("Erro ao definir capa do deck: " + error.message);
+    }
+  };
+
+  // Função para renomear deck
+  const handleRenameDeck = async () => {
+    if (!selectedDeck || !newDeckName.trim()) return;
+
+    try {
+      await updateDeck({ deckId: selectedDeck.id, updates: { name: newDeckName.trim() } });
+      setRenameDialogOpen(false);
+      setDeckOptionsOpen(false);
+      setSelectedDeck(null);
+      setNewDeckName("");
+    } catch (error) {
+      console.error("❌ Erro ao renomear deck:", error);
+      alert("Erro ao renomear deck: " + error.message);
+    }
+  };
+
+  // Função para alterar formato do deck
+  const handleChangeFormat = async () => {
+    if (!selectedDeck || !newFormat.trim()) return;
+
+    try {
+      await updateDeck({ deckId: selectedDeck.id, updates: { format: newFormat.trim() } });
+      setFormatDialogOpen(false);
+      setDeckOptionsOpen(false);
+      setSelectedDeck(null);
+      setNewFormat("");
+    } catch (error) {
+      console.error("Erro ao alterar formato:", error);
+      alert("Erro ao alterar formato do deck");
+    }
+  };
+
+  // Função para apagar deck
+  const handleDeleteDeck = async () => {
+    if (!selectedDeck) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteDeck(selectedDeck.id);
       setDeleteDialogOpen(false);
       setDeckOptionsOpen(false);
       setSelectedDeck(null);
-      
-      console.log("🎉 Deck apagado com sucesso!");
-      
-    } catch (err) {
-      console.error("❌ Erro ao apagar deck:", err);
-      alert(`Erro ao apagar deck: ${err.message}\n\nO deck pode ter sido marcado para exclusão quando a internet estiver disponível.`);
-      
-      // Tenta atualizar o cache mesmo assim
-      queryClient.invalidateQueries(["decks", user?.uid]);
-      
-      // Fecha os modais mesmo em caso de erro
-      setDeleteDialogOpen(false);
-      setDeckOptionsOpen(false);
-      setSelectedDeck(null);
+    } catch (error) {
+      console.error("Erro ao apagar deck:", error);
+      alert("Erro ao apagar deck");
     } finally {
       setIsDeleting(false);
     }
-  }; // Fim handleDeleteDeck
-
-  // 📋 Mudar formato do deck
-  const handleChangeFormat = async () => {
-    if (!newFormat.trim() || !selectedDeck) return;
-    
-    const deckId = selectedDeck.id;
-    const format = newFormat.trim();
-    
-    // Fecha TUDO primeiro
-    setFormatDialogOpen(false);
-    setDeckOptionsOpen(false);
-    setNewFormat("");
-    setSelectedDeck(null);
-    
-    // Atualiza o cache local diretamente (otimista)
-    queryClient.setQueryData(["decks", user?.uid], (oldDecks) => {
-      if (!oldDecks) return oldDecks;
-      return oldDecks.map((deck) =>
-        deck.id === deckId
-          ? { ...deck, format: format }
-          : deck
-      );
-    });
-    
-    // Atualiza também o cache do Deckbuilder
-    queryClient.setQueryData(["deck", deckId], (oldDeck) => {
-      if (!oldDeck) return oldDeck;
-      return { ...oldDeck, format: format };
-    });
-    
-    // Salva em background
-    try {
-      await updateDocSilent("decks", deckId, { format: format });
-    } catch (err) {
-      console.error("Erro ao mudar formato:", err);
-    }
   };
 
-  // �🎮 Exportar para Magic Arena
+  // Função para exportar para Magic Arena
   const handleExportToArena = async () => {
     if (!selectedDeck) return;
-    
+
     setIsExporting(true);
     try {
-      const q = query(
-        collection(db, "cards"),
-        where("deck_id", "==", selectedDeck.id)
-      );
-      const snapshot = await getDocs(q);
-      const cards = snapshot.docs.map((doc) => doc.data());
-
+      // Buscar cartas do deck
+      const response = await fetch(`/api/decks/${selectedDeck.id}/cards`);
+      if (!response.ok) throw new Error("Erro ao carregar cartas");
+      
+      const cards = await response.json();
+      
+      // Converter para formato Arena
       const arenaFormat = cards
-        .map((card) => `${card.quantity} ${card.card_name}`)
+        .map((card) => `${card.quantity} ${card.name}`)
         .join("\n");
-
+      
+      // Copiar para clipboard
       await navigator.clipboard.writeText(arenaFormat);
-      alert("Deck copiado para Magic Arena! Cole no jogo.");
+      alert("Lista copiada para a área de transferência!");
+      
       setDeckOptionsOpen(false);
       setSelectedDeck(null);
-    } catch (err) {
-      console.error("Erro ao exportar para Arena:", err);
-      alert("Erro ao exportar deck. Tente novamente.");
+    } catch (error) {
+      console.error("Erro ao exportar:", error);
+      alert("Erro ao exportar deck");
     } finally {
       setIsExporting(false);
     }
   };
 
   return (
-    <div className="relative h-screen w-screen bg-gradient-to-br from-gray-900 to-black text-white">
-      {/* 🔗 Popup de perfil (UserMenu) */}
-      <div className="fixed top-6 right-6">
-        <UserMenu />
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-purple-950">
+      {/* 🌐 Barra de status de conectividade */}
+      {isOfflineMode && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-yellow-600/90 backdrop-blur-sm">
+          <div className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white">
+            <WifiOff className="w-4 h-4" />
+            <span>Modo Offline - Apenas visualização</span>
+            {connectivity.canSearchScryfall && (
+              <span className="text-yellow-200">• Busca Scryfall disponível</span>
+            )}
+            {connectivity.isSupabaseConnected && (
+              <button 
+                onClick={syncDecks}
+                className="ml-4 px-2 py-1 bg-white/20 rounded text-xs hover:bg-white/30 transition-colors"
+              >
+                Sincronizar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
-      <div className="flex h-full flex-col items-center px-4 pt-20">
+      {/* 🔗 Popup de perfil (UserMenu) - só mostra se há usuário autenticado */}
+      {user && (
+        <div className="fixed top-6 right-6">
+          <UserMenu />
+        </div>
+      )}
+
+      <div className={`flex h-full flex-col items-center px-4 text-white ${isOfflineMode ? 'pt-24' : 'pt-20'}`}>
+        {/* Alertas de erro */}
+        {(decksError || createError || deleteError) && (
+          <div className="mb-4 w-full max-w-md">
+            <Alert className="bg-red-900/20 border-red-800">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-red-400">
+                {decksError?.message || createError?.message || deleteError?.message}
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         <h1 className="mb-6 text-3xl font-bold">Meus Decks</h1>
+
 
         {isLoading && <p>Carregando decks...</p>}
 
         {!isLoading && !hasDecks && (
           <button
-            onClick={() => navigate("/create")}
-            className="rounded-lg bg-orange-500 px-6 py-3 text-lg font-semibold text-white shadow hover:bg-orange-600"
+            onClick={() => {
+              if (!connectivity.canSaveData) {
+                alert('Criar deck só é possível quando online');
+                return;
+              }
+              navigate("/create");
+            }}
+            className={`rounded-lg px-6 py-3 text-lg font-semibold text-white shadow ${
+              connectivity.canSaveData 
+                ? 'bg-orange-500 hover:bg-orange-600' 
+                : 'bg-gray-500 cursor-not-allowed'
+            }`}
+            disabled={!connectivity.canSaveData}
           >
             Adicionar um novo deck
+            {!connectivity.canSaveData && <span className="ml-2 text-sm">(Offline)</span>}
           </button>
         )}
 
@@ -422,7 +442,7 @@ function Home() {
                 <div
                   className="h-56 w-full bg-cover bg-center"
                   style={{
-                    backgroundImage: `url(${deck.coverImage || "https://placehold.co/400x200"})`,
+                    backgroundImage: `url(${deck.cover_image_url || "https://placehold.co/400x200"})`,
                   }}
                 />
 
@@ -514,21 +534,61 @@ function Home() {
             <input
               type="text"
               value={coverSearchTerm}
-              onChange={(e) => handleSearchAutocomplete(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setCoverSearchTerm(value);
+                if (value.length >= 2) {
+                  handleSearchAutocomplete(value);
+                } else {
+                  setCoverSuggestions([]);
+                }
+              }}
               placeholder="Digite o nome da carta..."
               className="w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
             {loadingSearch && <p className="mt-2 text-sm text-gray-400">Buscando...</p>}
-            <ul className="mt-3 max-h-40 overflow-y-auto">
-              {coverSuggestions.map((sug) => (
-                <li
-                  key={sug}
-                  onClick={() => handleSelectCover(sug)}
-                  className="cursor-pointer px-2 py-1 hover:bg-gray-700 rounded"
-                >
-                  {sug}
-                </li>
-              ))}
+            <ul className="mt-3 max-h-60 overflow-y-auto">
+              {coverSuggestions.map((suggestion, index) => {
+                const cardName = suggestion.name || suggestion;
+                const imageUrl = suggestion.image_url;
+                const hasArtCrop = suggestion.has_art_crop;
+                const isDualFace = suggestion.is_dual_face;
+                
+                return (
+                  <li
+                    key={`${cardName}-${index}`}
+                    onClick={() => handleSelectCover(cardName)}
+                    className="cursor-pointer px-2 py-2 hover:bg-gray-700 rounded flex items-center gap-3 transition-colors"
+                  >
+                    {imageUrl && (
+                      <div className="flex-shrink-0">
+                        <img 
+                          src={imageUrl} 
+                          alt={cardName}
+                          className="w-12 h-12 object-cover rounded border border-gray-600"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <div className="text-white font-medium">{cardName}</div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {isDualFace && (
+                          <div className="text-xs text-blue-400">🔄 Duas faces</div>
+                        )}
+                        {hasArtCrop && (
+                          <div className="text-xs text-green-400">🎨 Arte sem moldura</div>
+                        )}
+                        {imageUrl && !hasArtCrop && (
+                          <div className="text-xs text-yellow-400">🖼️ Com moldura</div>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
             <button
               onClick={() => setCoverSearchOpen(false)}
@@ -816,42 +876,8 @@ function Home() {
         </div>
       )}
 
-      {/* 🔄 Painel de Debug de Sincronização (apenas para desenvolvimento e dev autorizado) */}
-      {process.env.NODE_ENV === 'development' && user?.email === DEV_EMAIL && (
-        <>
-          {/* Botão toggle flutuante - CENTRALIZADO */}
-          <button
-            onClick={() => setShowSyncPanel(!showSyncPanel)}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg transition-all duration-200 hover:scale-110"
-            title={showSyncPanel ? "Ocultar painel de sincronização" : "Mostrar painel de sincronização"}
-          >
-            <svg 
-              className="w-6 h-6" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              {showSyncPanel ? (
-                // Ícone de "fechar" (X)
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                // Ícone de "database/storage"
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-              )}
-            </svg>
-          </button>
-
-          {/* Painel de debug - CENTRALIZADO */}
-          {showSyncPanel && (
-            <div className="fixed bottom-20 left-1/2 -translate-x-1/2 w-96 z-40">
-              <SyncDebugPanel />
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }
 
 export default Home;
-

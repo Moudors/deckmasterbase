@@ -1,39 +1,8 @@
 // src/authSupabase.ts
-import { supabase, auth } from "./supabase";
+import { supabase } from "./supabase";
 
-// Cria documento do usuário no Supabase (tabela users)
-async function createUserDocument(user: any) {
-  // Verifica se o usuário já existe
-  const { data: existingUser, error: checkError } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', user.uid)
-    .single();
-
-  if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = not found
-    console.error('Erro ao verificar usuário:', checkError);
-    return;
-  }
-
-  if (!existingUser) {
-    // Criar novo usuário na tabela users
-    const { error } = await supabase
-      .from('users')
-      .insert({
-        id: user.uid,
-        display_name: user.displayName || "",
-        email: user.email,
-        username: "",
-        bio: "",
-        friends: [],
-        created_at: new Date().toISOString()
-      });
-
-    if (error) {
-      console.error('Erro ao criar usuário:', error);
-    }
-  }
-}
+// Nota: A criação do documento do usuário agora é feita automaticamente
+// no supabase.ts quando o onAuthStateChanged é disparado
 
 // Criar usuário com email/senha
 export async function signUp(email: string, password: string) {
@@ -52,7 +21,7 @@ export async function signUp(email: string, password: string) {
       photoURL: data.user.user_metadata?.avatar_url || null
     };
     
-    await createUserDocument(user);
+    // A criação do documento é feita automaticamente no supabase.ts
     return user;
   }
 
@@ -61,14 +30,21 @@ export async function signUp(email: string, password: string) {
 
 // Login com email/senha
 export async function signIn(email: string, password: string) {
+  console.log('🔐 Tentando fazer login com:', email);
+  
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
 
-  if (error) throw error;
+  if (error) {
+    console.error('❌ Erro no login:', error);
+    throw error;
+  }
 
   if (data.user) {
+    console.log('✅ Login realizado com sucesso:', data.user.email);
+    
     const user = {
       uid: data.user.id,
       email: data.user.email,
@@ -76,7 +52,7 @@ export async function signIn(email: string, password: string) {
       photoURL: data.user.user_metadata?.avatar_url || null
     };
     
-    await createUserDocument(user);
+    // A criação do documento é feita automaticamente no supabase.ts
     return user;
   }
 
@@ -85,13 +61,24 @@ export async function signIn(email: string, password: string) {
 
 // Login com Google
 export async function signInWithGoogle() {
-  // Use uma variável de ambiente opcional para o redirect (útil para produção)
-  const redirect = process.env.REACT_APP_SUPABASE_OAUTH_REDIRECT || 'https://deckmasterbase.vercel.app/';
+  // Determina a URL de redirect baseada no ambiente
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  
+  let redirectTo;
+  if (isLocalhost) {
+    // Para desenvolvimento local
+    redirectTo = 'http://localhost:3000/';
+  } else {
+    // Para produção, usa variável de ambiente ou fallback
+    redirectTo = process.env.REACT_APP_SUPABASE_OAUTH_REDIRECT || 'https://deckmasterbase.vercel.app/';
+  }
+
+  console.log('🔄 Login com Google, redirect para:', redirectTo);
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: redirect
+      redirectTo: redirectTo
     }
   });
 

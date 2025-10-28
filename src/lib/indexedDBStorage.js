@@ -293,6 +293,9 @@ const storage = new IndexedDBStorage();
 
 export default storage;
 
+// Exporta a instância também como named export para compatibilidade
+export const indexedDBStorage = storage;
+
 // Exporta métodos úteis
 export const setItem = (key, value) => storage.setItem(key, value);
 export const getItem = (key) => storage.getItem(key);

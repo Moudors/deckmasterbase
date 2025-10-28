@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { db } from "@/firebase";
-import { doc, getDoc } from "@/firebase";
-import { updateDocSilent } from "@/lib/firestoreSilent";
+import { supabase } from "@/supabase";
+import { userOperations } from "@/lib/supabaseOperations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,22 +19,43 @@ export default function ProfileEdit({ userId, onClose }) {
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  console.log('🔧 ProfileEdit - userId recebido:', userId);
+
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      console.error('❌ ProfileEdit - userId não fornecido');
+      setError("ID do usuário não fornecido");
+      setLoading(false);
+      return;
+    }
 
     const fetchUser = async () => {
       try {
-        const userRef = doc(db, "users", userId);
-        const docSnap = await getDoc(userRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
+        console.log('🔄 ProfileEdit - Buscando dados do usuário via Supabase:', userId);
+        
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        
+        console.log('📄 ProfileEdit - Resultado da busca Supabase:', { data, error });
+        
+        if (error) {
+          console.error('❌ ProfileEdit - Erro no Supabase:', error);
+          setError("Erro ao carregar perfil: " + error.message);
+        } else if (data) {
           setDisplayName(data.display_name || "");
           setUsername(data.username || "");
           setBio(data.bio || "");
+          console.log('✅ ProfileEdit - Dados carregados:', data);
+        } else {
+          console.error('❌ ProfileEdit - Nenhum dado retornado');
+          setError("Usuário não encontrado");
         }
       } catch (err) {
-        console.error(err);
-        setError("Erro ao carregar perfil");
+        console.error('❌ ProfileEdit - Erro geral:', err);
+        setError("Erro ao carregar perfil: " + err.message);
       } finally {
         setLoading(false);
       }
@@ -65,7 +85,7 @@ export default function ProfileEdit({ userId, onClose }) {
       await updateUsername(userId, username.trim());
 
       // Atualiza outros campos do perfil
-      await updateDocSilent("users", userId, {
+      await userOperations.updateUser(userId, {
         display_name: displayName.trim() || null,
         bio: bio.trim() || null,
       });

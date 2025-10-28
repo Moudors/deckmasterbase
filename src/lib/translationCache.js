@@ -1,4 +1,19 @@
-// 🗣️ Cache de traduções no IndexedDB
+// �️ Remove tradução específica do cache
+export async function removeTranslation(cardId, cardName) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const key = `${cardId}_${cardName}`;
+    await store.delete(key);
+    console.log(`🗑️ Tradução removida do cache: ${cardName}`);
+    return true;
+  } catch (error) {
+    console.error("❌ Erro ao remover tradução:", error);
+    return false;
+  }
+}
+// �🗣️ Cache de traduções no IndexedDB
 // Evita chamadas repetidas à Azure Translator API
 
 const DB_NAME = "deckmaster_translations";

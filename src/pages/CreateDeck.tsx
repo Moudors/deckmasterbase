@@ -1,10 +1,10 @@
-// src/pages/CreateDeck.tsx
+// src/pages/CreateDeck.tsx - Online-First Version
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import { localDeckManager } from "@/lib/localDeckManager";
-import { auth } from "@/firebase";
-import { useAuthState } from "@/hooks/useAuthState";
+import { useAuthState } from "../hooks/useAuthState";
+import { useConnectivity } from "@/lib/connectivityManager";
+import { deckOperations } from "@/lib/supabaseOperations";
+import { supabase } from "@/supabase";
 import {
   Select,
   SelectContent,
@@ -27,15 +27,17 @@ interface LocationState {
   cardToAdd?: CardToAdd;
 }
 
-function CreateDeck() {
+const CreateDeck = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
   const [user] = useAuthState();
+  const { isOnline, canSaveData } = useConnectivity();
+
   const [deckName, setDeckName] = useState("");
-  const [format, setFormat] = useState("");
-  
-  // 🎴 Carta para adicionar automaticamente após criar o deck
+  const [format, setFormat] = useState("commander");
+  const [error, setError] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+
   const cardToAdd = (location.state as LocationState)?.cardToAdd;
 
   // 🎨 Helper para converter URL para art_crop (arte sem frame)
@@ -47,44 +49,63 @@ function CreateDeck() {
     return imageUrl;
   };
 
-  // 🔎 Loga no console sempre que o formato mudar
+  // Bloqueia criação de deck se estiver offline
   useEffect(() => {
-    console.log("Formato atual:", format);
-  }, [format]);
+    if (!canSaveData) {
+      setError("Criação de decks não disponível offline. Conecte-se à internet.");
+    } else {
+      setError("");
+    }
+  }, [canSaveData]);
+
+  // Monitora o erro da criação
+  useEffect(() => {
+    if (error) {
+      console.error("❌ Erro na criação:", error);
+    }
+  }, [error]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!deckName || !format || !user) return;
+    if (!deckName || !format) return;
+
+    if (!canSaveData) {
+      setError("Não é possível criar decks offline. Conecte-se à internet.");
+      return;
+    }
+
+    setIsCreating(true);
+    setError("");
 
     try {
-      console.log("🔧 Criando deck LOCALMENTE (sem Firebase)...");
+      console.log("🔧 Criando deck online...");
       
-      // 🎯 Cria o deck LOCALMENTE com ID real
-      const deckId = await localDeckManager.saveDeckLocally({
-        ownerId: user.uid,
+      // 🔍 Obter o usuário autenticado do Supabase
+      const { data: { user: supabaseUser }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !supabaseUser) {
+        throw new Error("Usuário não autenticado no Supabase. Faça login novamente.");
+      }
+      
+      console.log("👤 Usuário autenticado:", supabaseUser.email, "ID:", supabaseUser.id);
+      
+      // 🎯 Cria o deck ONLINE diretamente
+      const newDeck = await deckOperations.createDeck({
         name: deckName,
         format,
-        cards: [],
-        createdAt: new Date(),
+        owner_id: supabaseUser.id, // Usar o ID do Supabase Auth
         // 🎨 Define a capa como art_crop (arte sem frame) da primeira carta
-        cover_image_url: getArtCropUrl(cardToAdd?.image_url) || null,
-        coverImage: getArtCropUrl(cardToAdd?.image_url) || null,
+        cover_image_url: getArtCropUrl(cardToAdd?.image_url) || "",
       });
 
-      console.log("✅ Deck criado LOCALMENTE com ID real:", deckId);
-      console.log("📦 Deck será sincronizado quando houver quota disponível");
+      console.log("✅ Deck criado online com sucesso:", newDeck.id);
       
       if (cardToAdd?.image_url) {
         console.log("🎨 Capa do deck definida:", cardToAdd.image_url);
       }
 
-      // 🔄 Invalida e força refetch imediato da query dos decks
-      await queryClient.invalidateQueries({ queryKey: ["decks", user.uid] });
-      await queryClient.refetchQueries({ queryKey: ["decks", user.uid] });
-      console.log("🔄 Cache atualizado - deck deve aparecer na Home");
-
       // 🎴 Se há uma carta para adicionar, redireciona com a carta no state
-      if (cardToAdd && deckId) {
+      if (cardToAdd && newDeck.id) {
         console.log("🎯 Redirecionando para deck com carta:", cardToAdd.card_name);
         
         // Prepara os dados da carta no formato que o Deckbuilder espera
@@ -101,34 +122,82 @@ function CreateDeck() {
         console.log("📤 Dados enviados para Deckbuilder:", cardForDeckbuilder);
         
         // Redireciona para o Deckbuilder com a carta no state
-        navigate(`/deckbuilder/${deckId}`, {
+        navigate(`/deckbuilder/${newDeck.id}`, {
           state: {
-            addCard: cardForDeckbuilder,
-            _localDeck: true, // Indica que é deck local
+            addCard: cardForDeckbuilder
           }
         });
       } else {
         // Se não há carta, apenas navega para o deck vazio
-        navigate(`/deckbuilder/${deckId}`, {
-          state: { _localDeck: true }
-        });
+        navigate(`/deckbuilder/${newDeck.id}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao criar deck:", error);
-      alert("Erro ao criar deck. Tente novamente.");
+      setError(error.message || "Erro ao criar deck. Tente novamente.");
+    } finally {
+      setIsCreating(false);
     }
   };
+
+  // Se não há usuário logado, verifica pelo Supabase Auth
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setIsLoggedIn(!!user);
+      setAuthChecked(true);
+    };
+    
+    checkAuth();
+  }, []);
+
+  if (!authChecked) {
+    return (
+      <div className="h-screen w-screen bg-gradient-to-br from-gray-900 to-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
+          <p>Verificando autenticação...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <div className="h-screen w-screen bg-gradient-to-br from-gray-900 to-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-400 mb-4">Você precisa estar logado para criar decks</p>
+          <button 
+            onClick={() => navigate("/")}
+            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
+          >
+            Voltar para Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-screen bg-gradient-to-br from-gray-900 to-black text-white flex flex-col">
       {/* Header */}
-      <div className="flex items-center gap-2 p-4">
+      <div className="flex items-center justify-between gap-2 p-4">
         <button
           onClick={() => navigate(-1)}
           className="text-orange-500 hover:text-orange-400"
         >
           ← Voltar
         </button>
+        
+        {/* Status de conectividade */}
+        <div className="flex items-center space-x-2">
+          <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-400' : 'bg-red-400'}`}></div>
+          <span className="text-sm">
+            {isOnline ? 'Online' : 'Offline'}
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-col items-center text-center px-6">
@@ -145,55 +214,79 @@ function CreateDeck() {
             </p>
           </div>
         )}
+
+        {/* Aviso de offline */}
+        {!canSaveData && (
+          <div className="mt-4 bg-red-500/20 border border-red-500 rounded-lg px-4 py-2">
+            <p className="text-sm text-red-300">
+              ⚠️ Criação de decks indisponível offline. Conecte-se à internet.
+            </p>
+          </div>
+        )}
+
+        {/* Mensagem de erro */}
+        {error && (
+          <div className="mt-4 bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
       </div>
 
       {/* Formulário */}
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-col gap-6 px-6 mt-8"
-      >
-        {/* Nome do Deck */}
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-gray-300">Nome do Deck</label>
-          <input
-            type="text"
-            value={deckName}
-            onChange={(e) => setDeckName(e.target.value)}
-            placeholder="Ex: Dragões Vermelhos"
-            className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
-          />
-        </div>
+      <div className="flex-1 flex items-center justify-center px-6">
+        <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6">
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Nome do Deck
+            </label>
+            <input
+              type="text"
+              value={deckName}
+              onChange={(e) => setDeckName(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="Digite o nome do deck..."
+              required
+              disabled={!canSaveData || isCreating}
+            />
+          </div>
 
-        {/* Formato */}
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-gray-300">Formato</label>
-          <Select value={format} onValueChange={setFormat}>
-            <SelectTrigger className="w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-orange-500 focus:outline-none">
-              <SelectValue placeholder="Selecione o formato" />
-            </SelectTrigger>
-            <SelectContent className="bg-gray-800 text-white border border-gray-700">
-              <SelectItem value="Commander">Commander</SelectItem>
-              <SelectItem value="Commander 300">Commander 300</SelectItem>
-              <SelectItem value="Commander 500">Commander 500</SelectItem>
-              <SelectItem value="Standard">Standard</SelectItem>
-              <SelectItem value="Modern">Modern</SelectItem>
-              <SelectItem value="Pioneer">Pioneer</SelectItem>
-              <SelectItem value="Pauper">Pauper</SelectItem>
-              <SelectItem value="Legacy">Legacy</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Formato
+            </label>
+            <Select value={format} onValueChange={setFormat} disabled={!canSaveData || isCreating}>
+              <SelectTrigger className="w-full bg-gray-800 border-gray-600">
+                <SelectValue placeholder="Selecione o formato" />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-800 border-gray-600">
+                <SelectItem value="commander">Commander</SelectItem>
+                <SelectItem value="commander 300">Commander 300</SelectItem>
+                <SelectItem value="commander 500">Commander 500</SelectItem>
+                <SelectItem value="standard">Standard</SelectItem>
+                <SelectItem value="modern">Modern</SelectItem>
+                <SelectItem value="legacy">Legacy</SelectItem>
+                <SelectItem value="vintage">Vintage</SelectItem>
+                <SelectItem value="pauper">Pauper</SelectItem>
+                <SelectItem value="historic">Historic</SelectItem>
+                <SelectItem value="pioneer">Pioneer</SelectItem>
+                <SelectItem value="alchemy">Alchemy</SelectItem>
+                <SelectItem value="brawl">Brawl</SelectItem>
+                <SelectItem value="casual">Casual</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        {/* Botão Avançar */}
-        <button
-          type="submit"
-          className="mt-6 flex items-center justify-center gap-2 rounded-md bg-orange-500 px-4 py-2 font-semibold text-white hover:bg-orange-600"
-        >
-          Avançar →
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={!deckName || !format || !canSaveData || isCreating}
+            className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2 px-4 rounded-md font-medium transition-colors"
+          >
+            {isCreating ? "Criando..." : "Criar Deck"}
+          </button>
+        </form>
+      </div>
     </div>
   );
-}
+};
 
 export default CreateDeck;

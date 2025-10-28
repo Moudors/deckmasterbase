@@ -1,9 +1,12 @@
-import React, { useState, useRef, memo } from "react";
+import React, { useState, useRef, memo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useLongPress } from "use-long-press";
 import { Button } from "@/components/ui/button";
 import CardZoomModal from "./CardZoomModal";
 import { useImageCache } from "@/hooks/useImageCache";
+
+// Map para preservar o estado das faces entre re-renders
+const faceStateMap = new Map();
 
 function CardGridItem({ 
   card, 
@@ -20,12 +23,33 @@ function CardGridItem({
 }) {
   const [isTransparent, setIsTransparent] = useState(false);
   const [showZoom, setShowZoom] = useState(false);
+  
+  // Usar um estado persistente para currentFaceIndex baseado no ID da carta
+  const cardKey = `${card.id}-${card.scryfall_id}`;
+  const [currentFaceIndex, setCurrentFaceIndex] = useState(() => {
+    return faceStateMap.get(cardKey) || 0;
+  });
+
+  // Atualizar o map quando o estado muda
+  useEffect(() => {
+    faceStateMap.set(cardKey, currentFaceIndex);
+  }, [cardKey, currentFaceIndex]);
   const lastTap = useRef(0);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
+  // 🔄 Determinar se é carta dupla face
+  const hasMultipleFaces = card.card_faces && card.card_faces.length > 1;
+  const currentFace = hasMultipleFaces ? card.card_faces[currentFaceIndex] : card;
+  
+  // Prioriza image_url da carta (que pode ter sido atualizado via ArtSelector)
+  // Para cartas dupla face, sempre usa a imagem da face atual
+  const displayImageUrl = hasMultipleFaces 
+    ? (currentFace.image_uris?.normal || currentFace.image_url)
+    : (card.image_url || currentFace.image_uris?.normal || currentFace.image_url);
+
   // 🖼️ Cache de imagem local (IndexedDB)
-  const cachedImageUrl = useImageCache(card.image_url);
+  const cachedImageUrl = useImageCache(displayImageUrl);
 
   // 🔄 Swipe para direita: abre zoom
   const handleTouchStart = (e) => {
@@ -60,6 +84,16 @@ function CardGridItem({
       onToggleAcquired?.({ ...card, acquired: !card.acquired });
     } else {
       onOfferTrade?.(card);
+    }
+  };
+
+  // 🔄 Alternar face da carta dupla face
+  const toggleFace = (e) => {
+    e.stopPropagation();
+    
+    if (hasMultipleFaces) {
+      const newIndex = (currentFaceIndex + 1) % card.card_faces.length;
+      setCurrentFaceIndex(newIndex);
     }
   };
 
@@ -115,8 +149,9 @@ function CardGridItem({
         )}
 
         <img
-          src={cachedImageUrl || card.image_url}
-          alt={card.card_name}
+          key={`${card.id}-${currentFaceIndex}-${displayImageUrl?.split('/').pop()}-${card.updated_at || card.scryfall_id}`}
+          src={cachedImageUrl || displayImageUrl}
+          alt={currentFace.name || card.card_name}
           className={`card-image w-full h-auto rounded-lg transition-opacity duration-300 ${
             isTransparent ? "opacity-50" : "opacity-100"
           }`}
@@ -124,6 +159,34 @@ function CardGridItem({
           onContextMenu={(e) => e.preventDefault()}
           loading="lazy"
         />
+
+        {/* Botão de alternar face (canto superior direito) */}
+        {hasMultipleFaces && (
+          <button
+            onClick={toggleFace}
+            className="absolute top-2 right-2 w-7 h-7 bg-orange-500/90 hover:bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-10"
+            aria-label="Alternar face da carta"
+            title={`Face ${currentFaceIndex + 1}/${card.card_faces.length}: ${currentFace.name || 'Face ' + (currentFaceIndex + 1)}`}
+            data-card-id={card.id}
+            data-face-index={currentFaceIndex}
+            data-testid="dual-face-toggle"
+          >
+            <svg
+              className="w-3 h-3"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-white text-orange-500 text-xs rounded-full flex items-center justify-center font-bold leading-none">
+              {currentFaceIndex + 1}
+            </span>
+          </button>
+        )}
 
         {/* Quantidade */}
         {card.quantity > 1 && (

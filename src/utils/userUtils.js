@@ -1,30 +1,40 @@
 // src/utils/userUtils.js
-import { db } from "@/firebase";
-import { doc, setDoc, getDoc } from "@/firebase";
-import { updateDocSilent, deleteDocSilent } from "@/lib/firestoreSilent";
+import { supabase } from '../supabase';
+import { userOperations } from '../lib/supabaseOperations';
 import { v4 as uuidv4 } from "uuid";
 
 /**
- * Garante que o usuário tenha um documento no Firestore
+ * Garante que o usuário tenha um documento no Supabase
  * com UUID único e campos básicos.
  */
 export async function ensureUserProfile(user) {
-  if (!user?.uid) return;
+  if (!user?.id) return;
 
-  const userRef = doc(db, "users", user.uid);
-  const snap = await getDoc(userRef);
+  const existingUser = await userOperations.getUser(user.id);
 
-  if (!snap.exists()) {
-    await setDoc(userRef, {
+  if (!existingUser) {
+    const userData = {
+      id: user.id,
       uuid: uuidv4(), // UUID único e imutável
       email: user.email,
-      display_name: user.displayName || "",
+      display_name: user.user_metadata?.full_name || "",
       username: null,
       bio: "",
       friends: [],
-      created_at: new Date(),
-    });
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('users')
+      .insert(userData)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   }
+
+  return existingUser;
 }
 
 /**
@@ -37,28 +47,43 @@ export async function updateUsername(uid, newUsername) {
   if (!uid || !newUsername) throw new Error("Dados inválidos");
 
   const normalized = newUsername.toLowerCase();
-  const usernameRef = doc(db, "usernames", normalized);
-  const usernameSnap = await getDoc(usernameRef);
-
-  if (usernameSnap.exists()) {
+  
+  // Verificar se username já existe
+  const existingUsername = await userOperations.getUserByUsername(normalized);
+  if (existingUsername) {
     throw new Error("Este username já está em uso");
   }
 
   // Buscar usuário atual
-  const userRef = doc(db, "users", uid);
-  const userSnap = await getDoc(userRef);
-  if (!userSnap.exists()) throw new Error("Usuário não encontrado");
+  const currentUser = await userOperations.getUser(uid);
+  if (!currentUser) throw new Error("Usuário não encontrado");
 
-  const oldUsername = userSnap.data().username;
+  const oldUsername = currentUser.username;
 
-  // Criar novo username
-  await setDoc(usernameRef, { uid });
+  // Atualizar username do usuário
+  await userOperations.updateUser(uid, { username: normalized });
 
-  // Atualizar usuário
-  await updateDocSilent("users", uid, { username: normalized });
+  // Criar entrada na tabela usernames
+  const { error: usernameError } = await supabase
+    .from('usernames')
+    .insert({
+      id: normalized,
+      uid: uid,
+      created_at: new Date().toISOString()
+    });
 
-  // Remover username antigo (se existir)
+  if (usernameError) {
+    console.error('Erro ao criar entrada de username:', usernameError);
+    // Reverter mudança no usuário se falhar
+    await userOperations.updateUser(uid, { username: oldUsername });
+    throw usernameError;
+  }
+
+  // Remover username antigo se existir
   if (oldUsername) {
-    await deleteDocSilent("usernames", oldUsername.toLowerCase());
+    await supabase
+      .from('usernames')
+      .delete()
+      .eq('id', oldUsername);
   }
 }

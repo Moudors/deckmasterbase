@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Input } from "../ui/input";
+import { Button } from "../ui/button";
 import { Search, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { db } from "@/firebase";
-import { collection, doc } from "@/firebase";
 import { useQueryClient } from "@tanstack/react-query";
-import { addDocSilent, updateDocSilent } from "@/lib/firestoreSilent";
+import { deckCardOperations } from "../../lib/supabaseOperations";
 
 export default function SearchBar({ deckId, isSearching, setIsSearching }) {
   const [query, setQuery] = useState("");
@@ -99,17 +97,15 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
         );
 
         try {
-          // Usa função silenciosa - faz fallback para fila se quota excedida
-          await updateDocSilent("cards", existing.id, { quantity: nextQty });
+          // Atualizar quantidade no Supabase
+          await deckCardOperations.updateDeckCard(existing.id, { quantity: nextQty });
           // Sucesso silencioso - cache já está correto
         } catch (err) {
-          // Rollback apenas para erros críticos (não quota)
-          if (err.code !== "resource-exhausted") {
-            console.error("Erro crítico ao incrementar:", err);
-            queryClient.setQueryData(["cards", deckId], (old = []) =>
-              old.map((c) => (c.id === existing.id ? { ...c, quantity: existing.quantity } : c))
-            );
-          }
+          // Rollback para erros críticos
+          console.error("Erro ao incrementar:", err);
+          queryClient.setQueryData(["cards", deckId], (old = []) =>
+            old.map((c) => (c.id === existing.id ? { ...c, quantity: existing.quantity } : c))
+          );
         }
       } else {
         // --- show optimistic card immediately (client-side Scryfall fetched data)
@@ -117,22 +113,20 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
         const tempCard = { id: tempId, ...newCard, __optimistic: true };
         queryClient.setQueryData(["cards", deckId], (old = []) => [tempCard, ...old]);
 
-        // Persist to Firestore (silencioso)
+        // Persist to Supabase
         try {
-          const docId = await addDocSilent("cards", newCard);
+          const docId = await deckCardOperations.addCardToDeck(deckId, newCard);
 
           // Replace temp with real card id & data
           queryClient.setQueryData(["cards", deckId], (old = []) =>
             old.map((c) => (c && c.id === tempId ? { id: docId, ...newCard } : c))
           );
-          // Sucesso silencioso - operação pode estar em fila
+          // Sucesso - carta adicionada
         } catch (err) {
-          // Rollback apenas para erros críticos
-          if (err.code !== "resource-exhausted") {
-            console.error("Erro crítico ao adicionar:", err);
-            queryClient.setQueryData(["cards", deckId], (old = []) => old.filter((c) => c.id !== tempId));
-            alert("Erro ao adicionar carta: " + (err.message || "Tente novamente"));
-          }
+          // Rollback para erros
+          console.error("Erro ao adicionar:", err);
+          queryClient.setQueryData(["cards", deckId], (old = []) => old.filter((c) => c.id !== tempId));
+          alert("Erro ao adicionar carta: " + (err.message || "Tente novamente"));
         }
       }
 

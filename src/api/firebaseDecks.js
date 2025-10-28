@@ -1,6 +1,6 @@
 // api/firebaseDecks.js
-import { db } from "./firebaseClient";
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, orderBy } from "@/firebase";
+import { db } from "../firebase";
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, orderBy } from "firebase/firestore";
 
 const decksCollection = collection(db, "decks");
 

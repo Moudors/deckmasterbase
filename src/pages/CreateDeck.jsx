@@ -1,10 +1,8 @@
 // src/pages/CreateDeck.tsx
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import { addDocSilent } from "@/lib/firestoreSilent";
-import { auth, db } from "@/firebase";
-import { useAuthState } from "react-firebase-hooks/auth";
+import { useUnifiedDecks } from "@/lib/useUnifiedDecks";
+import { useAuthState } from "@/hooks/useAuthState";
 import {
   Select,
   SelectContent,
@@ -16,10 +14,11 @@ import {
 function CreateDeck() {
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
-  const [user] = useAuthState(auth);
+  const [user] = useAuthState();
+  const { createDeck } = useUnifiedDecks();
   const [deckName, setDeckName] = useState("");
   const [format, setFormat] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
   
   // 🎴 Carta para adicionar automaticamente após criar o deck
   const cardToAdd = location.state?.cardToAdd;
@@ -40,48 +39,39 @@ function CreateDeck() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!deckName || !format || !user) return;
+    if (!deckName || !format || !user || isCreating) return;
 
+    setIsCreating(true);
     try {
-      // Cria o deck (com cover se houver carta)
-      const deckId = await addDocSilent("decks", {
-        ownerId: user.uid,
+      console.log("🆕 Criando deck:", { name: deckName, format });
+      const startTime = performance.now();
+      
+      // Cria o deck usando o hook unificado
+      const newDeck = await createDeck({
         name: deckName,
         format,
         cards: [],
-        createdAt: new Date(),
         // 🎨 Define a capa como art_crop (arte sem frame) da primeira carta
         cover_image_url: getArtCropUrl(cardToAdd?.image_url) || null,
         coverImage: getArtCropUrl(cardToAdd?.image_url) || null,
       });
 
-      console.log("✅ Deck criado com ID:", deckId);
+      const endTime = performance.now();
+      console.log(`✅ Deck criado em ${Math.round(endTime - startTime)}ms:`, newDeck);
+      const deckId = newDeck.id;
+      
       if (cardToAdd?.image_url) {
         console.log("🎨 Capa do deck definida:", cardToAdd.image_url);
       }
 
-      // ⚠️ Se o deck foi criado com ID temporário, aguarda sincronização
-      if (deckId && deckId.toString().startsWith("temp_")) {
-        console.log("⏳ Deck criado com ID temporário, aguardando sincronização...");
-        
-        // Tenta forçar sincronização
-        if (window.offlineSyncManager) {
-          await window.offlineSyncManager.trySync();
-        }
-        
-        // Aguarda um pouco para dar tempo de sincronizar
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        console.log("⚠️ AVISO: Deck pode estar com ID temporário. Redirecionando mesmo assim...");
-      }
-
-      // Invalida a query dos decks para atualizar a Home
-      queryClient.invalidateQueries({ queryKey: ["decks", user.uid] });
-
       // 🎴 Se há uma carta para adicionar, redireciona com a carta no state
       // O Deckbuilder fará a adição silenciosa usando a lógica existente
       if (cardToAdd && deckId) {
-        console.log("� Redirecionando para deck com carta:", cardToAdd.card_name);
+        console.log("⏳ Aguardando sincronização do cache antes do redirecionamento...");
+        // Aguarda um momento para garantir que o deck está no cache
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        console.log("📋 Redirecionando para deck com carta:", cardToAdd.card_name);
         
         // Prepara os dados da carta no formato que o Deckbuilder espera
         const cardForDeckbuilder = {
@@ -104,12 +94,19 @@ function CreateDeck() {
           }
         });
       } else {
+        console.log("⏳ Aguardando sincronização do cache antes do redirecionamento...");
+        // Aguarda um momento para garantir que o deck está no cache
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         // Se não há carta, apenas navega para o deck vazio
+        console.log("📋 Redirecionando para deck vazio");
         navigate(`/deckbuilder/${deckId}`);
       }
     } catch (error) {
       console.error("❌ Erro ao criar deck:", error);
       alert("Erro ao criar deck. Tente novamente.");
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -181,9 +178,21 @@ function CreateDeck() {
         {/* Botão Avançar */}
         <button
           type="submit"
-          className="mt-6 flex items-center justify-center gap-2 rounded-md bg-orange-500 px-4 py-2 font-semibold text-white hover:bg-orange-600"
+          disabled={isCreating || !deckName || !format}
+          className={`mt-6 flex items-center justify-center gap-2 rounded-md px-4 py-2 font-semibold text-white ${
+            isCreating || !deckName || !format
+              ? 'bg-gray-500 cursor-not-allowed'
+              : 'bg-orange-500 hover:bg-orange-600'
+          }`}
         >
-          Avançar →
+          {isCreating ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              Criando...
+            </>
+          ) : (
+            'Avançar →'
+          )}
         </button>
       </form>
     </div>

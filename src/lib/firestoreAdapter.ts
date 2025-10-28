@@ -1,6 +1,9 @@
 // src/lib/firestoreAdapter.ts
 import { supabase } from '../supabase';
 
+// Mock database object para compatibilidade
+export const db = {};
+
 // Tipos para compatibilidade com Firestore
 export interface DocumentReference {
   id: string;

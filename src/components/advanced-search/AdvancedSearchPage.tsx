@@ -1,10 +1,10 @@
+import React from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { collection, getDocs, query, where } from "@/firebase";
-import { auth, db } from "@/firebase";
-import { useAuthState } from "@/hooks/useAuthState";
-import { addDocSilent } from "@/lib/firestoreSilent";
+import { deckOperations, deckCardOperations } from "@/lib/supabaseOperations";
+import { auth } from "@/supabase";
+import { useAuthState } from "../../hooks/useAuthState";
 import AdvancedSearchForm from "./AdvancedSearchForm";
 import SearchResultsGrid from "./SearchResultsGrid";
 import CardZoomModal from "./CardZoomModal";
@@ -54,12 +54,10 @@ export default function AdvancedSearchPage({ onClose }: AdvancedSearchPageProps)
 
   // Busca decks do usuário
   const { data: decks } = useQuery({
-    queryKey: ["decks", user?.uid],
+    queryKey: ["decks", user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const q = query(collection(db, "decks"), where("ownerId", "==", user.uid));
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      return await deckOperations.getUserDecks(user.id);
     },
     enabled: !!user,
   });
@@ -124,19 +122,18 @@ export default function AdvancedSearchPage({ onClose }: AdvancedSearchPageProps)
     
     setIsCreatingDeck(true);
     try {
-      const deckId = await addDocSilent("decks", {
-        ownerId: user.uid,
+      const deckId = await deckOperations.createDeck({
+        ownerId: user.id,
         name: newDeckName.trim(),
         format: "Commander",
         cards: [],
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       });
 
       console.log("✅ Deck criado com ID:", deckId);
 
       // Adiciona a carta ao deck recém-criado
-      const cardId = await addDocSilent("cards", {
-        deck_id: deckId,
+      const cardId = await deckCardOperations.addCardToDeck(deckId, {
         card_name: selectedCardForDeck.name,
         scryfall_id: selectedCardForDeck.id,
         image_url: selectedCardForDeck.image_uris?.normal || selectedCardForDeck.card_faces?.[0]?.image_uris?.normal,

@@ -36,6 +36,14 @@ export function useImageCache(imageUrl, enabled = true) {
     }
 
     let isMounted = true;
+    
+    // Limpa URL anterior se existir
+    if (cachedUrl && cachedUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(cachedUrl);
+    }
+    
+    // Reset para mostrar loading/vazio enquanto carrega nova imagem
+    setCachedUrl('');
 
     async function loadImage() {
       try {
@@ -65,7 +73,7 @@ export function useImageCache(imageUrl, enabled = true) {
         URL.revokeObjectURL(cachedUrl);
       }
     };
-  }, [imageUrl, enabled]);
+  }, [imageUrl, enabled]); // Remove cachedUrl das dependencies para evitar loop
 
   return cachedUrl;
 }

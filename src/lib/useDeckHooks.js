@@ -1,35 +1,27 @@
-// Hook personalizado para buscar decks de múltiplas fontes
-// NOVO: Usa UnifiedStorage + QueryManager (offline-first)
+// Hook personalizado para buscar decks - Sistema Online-First apenas
+// Removeu compatibilidade com sistema local
 
 import { useQuery } from "@tanstack/react-query";
-import { doc, getDoc } from "@/firebase";
-import { db } from "@/firebase";
-import { localDeckManager } from "./localDeckManager"; // Legacy - manter por compatibilidade
-import queryManager from "./queryManager"; // NOVO sistema
+import { deckOperations } from "./supabaseOperations";
+import { supabase } from "../supabase";
 
-// Busca deck do Firebase ou IndexedDB
+// Busca deck do Supabase apenas
 export async function fetchDeck(deckId) {
-  // NOVO: Usa queryManager (offline-first)
   try {
-    const deck = await queryManager.getDeck(deckId);
+    // 🔍 Verificar se usuário está autenticado
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      console.log('👤 Usuário não autenticado para buscar deck');
+      return null;
+    }
+
+    console.log("🔍 Buscando deck no Supabase:", deckId);
+    const deck = await deckOperations.getDeck(deckId);
+    
     if (deck) {
       console.log("✅ Deck carregado:", deckId);
       return deck;
-    }
-    
-    // Fallback para sistema antigo (compatibilidade)
-    if (deckId && deckId.startsWith("local_")) {
-      console.log("🔍 Fallback: Buscando deck LOCAL:", deckId);
-      return await localDeckManager.getDeck(deckId);
-    }
-
-    // Fallback para Firebase direto
-    console.log("🔍 Fallback: Buscando deck no Firebase:", deckId);
-    const docRef = doc(db, "decks", deckId);
-    const docSnap = await getDoc(docRef);
-    
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() };
     }
     
     return null;
@@ -39,53 +31,50 @@ export async function fetchDeck(deckId) {
   }
 }
 
-// Busca cartas do deck (Firebase ou IndexedDB)
+// Busca cartas do deck do Supabase apenas
 export async function fetchDeckCards(deckId) {
-  // NOVO: Usa queryManager (offline-first)
   try {
-    const cards = await queryManager.getDeckCards(deckId);
+    // 🔍 Verificar se usuário está autenticado
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      console.log('👤 Usuário não autenticado para buscar cartas');
+      return [];
+    }
+
+    console.log("🔍 Buscando cartas do deck no Supabase:", deckId);
+    const cards = await deckOperations.getDeckCards(deckId);
+    
     if (cards && cards.length > 0) {
       console.log(`✅ ${cards.length} cartas carregadas`);
       return cards;
     }
     
-    // Fallback para sistema antigo
-    if (deckId && deckId.startsWith("local_")) {
-      console.log("🔍 Fallback: Buscando cartas LOCAIS do deck:", deckId);
-      return await localDeckManager.getDeckCards(deckId);
-    }
-
-    // Fallback para Firebase direto
-    const { getDocs, collection, query, where } = await import("@/firebase");
-    const q = query(collection(db, "cards"), where("deck_id", "==", deckId));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    return [];
   } catch (error) {
     console.error("❌ Erro ao buscar cartas:", error);
     return [];
   }
 }
 
-// Hook para buscar deck com suporte a local/Firebase
+// Hook para buscar deck - Online-First apenas
 export function useDeck(deckId) {
   return useQuery({
     queryKey: ["deck", deckId],
     queryFn: () => fetchDeck(deckId),
     enabled: !!deckId,
     staleTime: 5 * 60 * 1000, // 5 minutos
+    cacheTime: 10 * 60 * 1000, // 10 minutos
   });
 }
 
-// Hook para buscar cartas do deck
+// Hook para buscar cartas do deck - Online-First apenas
 export function useDeckCards(deckId) {
   return useQuery({
     queryKey: ["cards", deckId],
     queryFn: () => fetchDeckCards(deckId),
     enabled: !!deckId,
-    staleTime: 2 * 60 * 1000, // 2 minutos (ao invés de Infinity)
-    gcTime: 24 * 60 * 60 * 1000, // 24 horas
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false, // Não refetch ao montar (confia no cache)
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    cacheTime: 10 * 60 * 1000, // 10 minutos
   });
 }

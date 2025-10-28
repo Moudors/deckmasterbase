@@ -9,16 +9,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader2, Check, Plus, Copy } from "lucide-react";
 import { motion } from "framer-motion";
-import { db } from "@/firebase";
-import {
-  collection,
-  doc,
-  getDoc,
-} from "@/firebase";
 import { useQueryClient } from "@tanstack/react-query";
-import { addDocSilent, updateDocSilent } from "@/lib/firestoreSilent";
 
-export default function ArtSelector({ isOpen, onClose, card, onSelectArt, deckId }) {
+export default function ArtSelector({ 
+  isOpen, 
+  onClose, 
+  card, 
+  onSelectArt, 
+  onAddCard,
+  onUpdateCard,
+  deckId 
+}) {
   const [versions, setVersions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(null);
@@ -86,7 +87,7 @@ export default function ArtSelector({ isOpen, onClose, card, onSelectArt, deckId
 
   // 🔄 Adicionar nova carta com arte diferente
   const handleAddDifferentArt = async () => {
-    if (!selectedVersion || !deckId) return;
+    if (!selectedVersion || !deckId || !onAddCard) return;
 
     const version = versions.find((v) => v.id === selectedVersion);
     if (!version) return;
@@ -95,80 +96,38 @@ export default function ArtSelector({ isOpen, onClose, card, onSelectArt, deckId
       version.image_uris?.normal || version.card_faces?.[0]?.image_uris?.normal;
 
     try {
-      // Criar card temporário otimista
-      const tempId = `temp-${Date.now()}`;
-      const newCard = {
-        id: tempId,
-        deck_id: deckId,
-        card_name: version.name,
+      // Usar a função de adicionar carta do hook unificado
+      await onAddCard({
         scryfall_id: version.id,
+        card_name: version.name,
         image_url: imageUrl,
         mana_cost: version.mana_cost || "",
         type_line: version.type_line || "",
-        acquired: false,
         quantity: 1,
-        created_at: new Date(),
-      };
-
-      // Inserir otimisticamente no cache e fechar modal
-      queryClient.setQueryData(["cards", deckId], (old = []) => [newCard, ...old]);
-      onClose();
-
-      // Persistir em background de forma silenciosa
-      const docId = await addDocSilent("cards", {
-        deck_id: deckId,
-        card_name: version.name,
-        scryfall_id: version.id,
-        image_url: imageUrl,
-        mana_cost: version.mana_cost || "",
-        type_line: version.type_line || "",
         acquired: false,
-        quantity: 1,
-        created_at: new Date(),
-        // Adicionar card_faces para suportar dupla face
         card_faces: version.card_faces || null,
       });
 
-      // Substituir temp pelo id real (ou tempId se for queued)
-      queryClient.setQueryData(["cards", deckId], (old = []) =>
-        old.map((c) => (c.id === tempId ? { ...c, id: docId } : c))
-      );
+      onClose();
     } catch (error) {
-      // Rollback apenas em erros críticos (não quota)
-      if (error.code !== "resource-exhausted") {
-        console.error("Erro crítico ao adicionar carta:", error);
-        queryClient.invalidateQueries({ queryKey: ["cards", deckId] });
-      }
+      console.error("Erro ao adicionar carta com arte diferente:", error);
     }
   };
 
   // 🔄 Adicionar mais cópias da carta atual
   const handleAddMoreCopies = async () => {
-    if (!card) return;
+    if (!card || !onUpdateCard) return;
 
     try {
-      // Atualização otimista local: aumentar quantidade imediatamente
-      queryClient.setQueryData(["cards", deckId], (old = []) =>
-        old.map((c) => (c.id === card.id ? { ...c, quantity: (c.quantity || 1) + 1 } : c))
-      );
+      // Usar a função de atualizar carta do hook unificado
+      await onUpdateCard({
+        cardId: card.id,
+        updates: { quantity: (card.quantity || 1) + 1 }
+      });
 
-      onClose(); // fecha modal enquanto atualiza em background
-
-      // Persistir a atualização de forma silenciosa
-      const cardRef = doc(db, "cards", card.id);
-      const cardSnap = await getDoc(cardRef);
-      if (cardSnap.exists()) {
-        const currentQuantity = cardSnap.data().quantity || 1;
-        await updateDocSilent("cards", card.id, {
-          quantity: currentQuantity + 1,
-        });
-      }
+      onClose();
     } catch (error) {
-      // Rollback apenas em erros críticos (não quota)
-      if (error.code !== "resource-exhausted") {
-        console.error("Erro crítico ao adicionar cópias:", error);
-        queryClient.invalidateQueries({ queryKey: ["cards", deckId] });
-      }
+      console.error("Erro ao adicionar mais cópias:", error);
     }
   };
 

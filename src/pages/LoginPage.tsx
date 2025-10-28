@@ -1,39 +1,62 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { signIn, signInWithGoogle } from "../auth"; // usa o auth.ts
+import { signIn, signInWithGoogle } from "../authSupabase"; // ✅ Agora usa Supabase
 import { Button } from "../components/ui/button";
+import { useAuthState } from "../hooks/useAuthState";
+import { User } from '@supabase/supabase-js';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const [user, loading] = useAuthState() as [User | null, boolean];
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // Redireciona automaticamente se já estiver logado
+  useEffect(() => {
+    if (user && !loading) {
+      console.log('✅ Usuário já logado, redirecionando para home...', user?.email);
+      setTimeout(() => {
+        navigate("/", { replace: true }); // ✅ Replace para evitar loop
+      }, 100);
+    }
+  }, [user, loading, navigate]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
+    setLoginLoading(true);
+    
     try {
-      await signIn(email, password);
-      navigate("/home");
+      console.log('🔐 Iniciando login...');
+      const result = await signIn(email, password);
+      console.log('✅ Login realizado:', result);
+      
+      // Pequeno delay para garantir que o estado seja atualizado
+      setTimeout(() => {
+        navigate("/", { replace: true });
+      }, 500);
+      
     } catch (err: any) {
+      console.error('❌ Erro no login:', err);
       setError("Falha no login: " + err.message);
     } finally {
-      setLoading(false);
+      setLoginLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
     setError("");
-    setLoading(true);
+    setLoginLoading(true);
     try {
+      console.log('🔄 Iniciando login com Google...');
       await signInWithGoogle();
-      navigate("/home");
+      // Para OAuth, o redirect é automático. O useEffect vai detectar quando voltar logado
     } catch (err: any) {
+      console.error('❌ Erro no login Google:', err);
       setError("Erro no login com Google: " + err.message);
-    } finally {
-      setLoading(false);
+      setLoginLoading(false);
     }
   };
 

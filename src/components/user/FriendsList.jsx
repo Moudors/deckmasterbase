@@ -1,7 +1,5 @@
 import React from "react";
-import { collection, getDocs } from "@/firebase";
-import { db } from "@/firebase";
-import { updateDocSilent } from "@/lib/firestoreSilent";
+import { userOperations } from "@/lib/supabaseOperations";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Users, ChevronRight } from "lucide-react";
@@ -23,8 +21,7 @@ export default function FriendsList({ user }) {
         return;
       }
 
-      const querySnapshot = await getDocs(collection(db, "users"));
-      const allUsers = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const allUsers = await userOperations.getAllUsers();
       const userFriends = allUsers.filter(u => user.friends.includes(u.id));
       setFriends(userFriends);
       setLoading(false);
@@ -34,7 +31,7 @@ export default function FriendsList({ user }) {
   }, [user?.friends]);
 
   const handleRemoveFriend = async (friendId) => {
-    await updateDocSilent("users", user.id, {
+    await userOperations.updateUser(user.id, {
       friends: user.friends.filter(id => id !== friendId),
     });
     setFriends(prev => prev.filter(f => f.id !== friendId));

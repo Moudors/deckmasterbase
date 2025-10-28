@@ -27,51 +27,58 @@ import MessagesPanel from "./MessagesPanel";
 import FriendsList from "./FriendsList";
 import ProfileEdit from "./ProfileEdit";
 
-import { auth, db } from "@/firebase";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  // onSnapshot removido - usando React Query agora
-} from "@/firebase";
-import { addDocSilent } from "@/lib/firestoreSilent";
+import { auth } from "@/supabase";
+import { userOperations, messageOperations } from "@/lib/supabaseOperations";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuthState } from "@/hooks/useAuthState";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 export default function UserMenu() {
+  const [authUser] = useAuthState();
+  const { profile: currentUser, loading: profileLoading } = useUserProfile(authUser);
+  const queryClient = useQueryClient();
   const [friendId, setFriendId] = useState("");
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showMessagesPanel, setShowMessagesPanel] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(null);
+
+  console.log('🔄 UserMenu - authUser:', authUser);
+  console.log('🆔 UserMenu - authUser.id:', authUser?.id);
+  console.log('🔄 UserMenu - authUser.email:', authUser?.email);
+  console.log('👤 UserMenu - currentUser:', currentUser);
+  console.log('⏳ UserMenu - profileLoading:', profileLoading);
   const [success, setSuccess] = useState(null);
 
   const navigate = useNavigate();
 
-  // ✅ Current User - React Query ao invés de onSnapshot (economia de ~10.800 leituras/hora)
-  const { data: user } = useQuery({
-    queryKey: ["currentUser", auth.currentUser?.uid],
-    queryFn: async () => {
-      if (!auth.currentUser) return null;
-      const userRef = doc(db, "users", auth.currentUser.uid);
-      const docSnap = await getDoc(userRef);
-      return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
-    },
-    staleTime: 5 * 60 * 1000, // Cache 5 minutos
-    refetchInterval: 5 * 60 * 1000, // Polling a cada 5 minutos (ao invés de tempo real)
-    enabled: !!auth.currentUser,
-  });
+  // ✅ Current User - Agora usando useUserProfile hook em vez de query antiga
+  // const { data: user } = useQuery({
+  //   queryKey: ["currentUser", auth.currentUser?.uid],
+  //   queryFn: async () => {
+  //     if (!auth.currentUser) return null;
+  //     const userRef = doc(db, "users", auth.currentUser.uid);
+  //     const docSnap = await getDoc(userRef);
+  //     return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+  //   },
+  //   staleTime: 5 * 60 * 1000, // Cache 5 minutos
+  //   refetchInterval: 5 * 60 * 1000, // Polling a cada 5 minutos (ao invés de tempo real)
+  //   enabled: !!auth.currentUser,
+  // });
+
+  // Usar currentUser do hook useUserProfile
+  const user = currentUser;
+  console.log('🎯 UserMenu - user final:', user);
+  console.log('🔍 UserMenu - display_name:', user?.display_name);
+  console.log('🔍 UserMenu - email:', user?.email);
 
   // ✅ All Users - Cacheia por 30 minutos (economia de N leituras por abertura)
   const { data: allUsers = [] } = useQuery({
     queryKey: ["allUsers"],
     queryFn: async () => {
-      const usersSnap = await getDocs(collection(db, "users"));
-      return usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return await userOperations.getAllUsers();
     },
     staleTime: 30 * 60 * 1000, // Cache 30 minutos
     gcTime: 60 * 60 * 1000, // Garbage collect após 1 hora
@@ -82,9 +89,7 @@ export default function UserMenu() {
     queryKey: ["messages", user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      const q = query(collection(db, "messages"), where("recipient_id", "==", user.id));
-      const snap = await getDocs(q);
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return await messageOperations.getMessagesByRecipient(user.id);
     },
     staleTime: 2 * 60 * 1000, // Cache 2 minutos
     refetchInterval: showMessagesPanel ? 30 * 1000 : false, // Polling apenas quando painel aberto
@@ -135,14 +140,14 @@ export default function UserMenu() {
         return;
       }
 
-      await addDocSilent("messages", {
+      await messageOperations.createMessage({
         recipient_id: friendUser.id,
         sender_id: user.id,
         sender_name: user.display_name || user.full_name || user.email,
         message: `${user.display_name || user.full_name || user.email} quer adicionar você como amigo.`,
         type: "friend_request",
         status: "pending",
-        created_at: new Date(),
+        created_at: new Date().toISOString(),
       });
 
       setSuccess("Solicitação de amizade enviada com sucesso!");
@@ -290,7 +295,7 @@ export default function UserMenu() {
               </div>
             ) : (
               <ProfileEdit
-                userId={user?.id}
+                userId={authUser?.uid || user?.id}
                 onClose={() => setShowEditProfile(false)}
               />
             )}
@@ -370,8 +375,28 @@ export default function UserMenu() {
         <Button
           variant="ghost"
           onClick={async () => {
-            await auth.signOut();
-            navigate("/login");
+            try {
+              console.log('🚪 Usuário clicou em logout...');
+              console.log('🔍 auth.currentUser antes do logout:', auth.currentUser);
+              
+              // Limpar todos os caches
+              queryClient.clear();
+              console.log('🧹 Cache limpo');
+              
+              const logoutResult = await auth.signOut();
+              console.log('✅ Logout concluído:', logoutResult);
+              console.log('🔍 auth.currentUser após logout:', auth.currentUser);
+              
+              // Aguardar um pouco para garantir que o estado seja atualizado
+              setTimeout(() => {
+                console.log('🔄 Redirecionando para login...');
+                window.location.href = '/login';
+              }, 100);
+              
+            } catch (error) {
+              console.error('❌ Erro no logout:', error);
+              setError('Erro ao fazer logout: ' + error.message);
+            }
           }}
           className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-900/20"
         >

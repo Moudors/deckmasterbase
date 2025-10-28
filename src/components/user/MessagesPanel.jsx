@@ -1,15 +1,5 @@
-import React, { useEffect, useState } from "react";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  arrayUnion,
-} from "@/firebase";
-import { db } from "@/firebase";
-import { updateDocSilent, deleteDocSilent } from "@/lib/firestoreSilent";
+import React, { useEffect, useState, useCallback } from "react";
+import { messageOperations, userOperations } from "@/lib/supabaseOperations";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,40 +19,30 @@ export default function MessagesPanel({ user }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
 
-    const q = query(
-      collection(db, "messages"),
-      where("recipient_id", "==", user.id),
-      orderBy("created_date", "desc")
-    );
-
-    const snapshot = await getDocs(q);
-    const msgs = snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...docSnap.data(),
-    }));
+    const msgs = await messageOperations.getMessagesByRecipient(user.id);
     setMessages(msgs);
     setLoading(false);
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     fetchMessages();
     const interval = setInterval(fetchMessages, 10000);
     return () => clearInterval(interval);
-  }, [user?.id]);
+  }, [fetchMessages]);
 
   const markAsRead = async (messageId) => {
-    await updateDocSilent("messages", messageId, { read: true });
+    await messageOperations.updateMessage(messageId, { read: true });
     setMessages((prev) =>
       prev.map((m) => (m.id === messageId ? { ...m, read: true } : m))
     );
   };
 
   const deleteMessage = async (messageId) => {
-    await deleteDocSilent("messages", messageId);
+    await messageOperations.deleteMessage(messageId);
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
   };
 
@@ -75,16 +55,20 @@ export default function MessagesPanel({ user }) {
   // ✅ Aceitar solicitação de amizade
   const handleAccept = async (msg) => {
     try {
+      // Buscar dados atuais dos usuários
+      const currentUser = await userOperations.getUser(user.id);
+      const senderUser = await userOperations.getUser(msg.sender_id);
+
       // adiciona cada um na lista de amigos do outro
-      await updateDocSilent("users", user.id, {
-        friends: arrayUnion(msg.sender_id),
+      await userOperations.updateUser(user.id, {
+        friends: [...(currentUser.friends || []), msg.sender_id],
       });
-      await updateDocSilent("users", msg.sender_id, {
-        friends: arrayUnion(user.id),
+      await userOperations.updateUser(msg.sender_id, {
+        friends: [...(senderUser.friends || []), user.id],
       });
 
       // atualiza status da mensagem
-      await updateDocSilent("messages", msg.id, {
+      await messageOperations.updateMessage(msg.id, {
         status: "accepted",
         read: true,
       });
@@ -102,7 +86,7 @@ export default function MessagesPanel({ user }) {
   // ❌ Recusar solicitação
   const handleReject = async (msg) => {
     try {
-      await updateDocSilent("messages", msg.id, {
+      await messageOperations.updateMessage(msg.id, {
         status: "rejected",
         read: true,
       });
