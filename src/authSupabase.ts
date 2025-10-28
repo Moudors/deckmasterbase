@@ -85,10 +85,13 @@ export async function signIn(email: string, password: string) {
 
 // Login com Google
 export async function signInWithGoogle() {
+  // Use uma variável de ambiente opcional para o redirect (útil para produção)
+  const redirect = process.env.REACT_APP_SUPABASE_OAUTH_REDIRECT || 'https://deckmasterbase.vercel.app/';
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.origin
+      redirectTo: redirect
     }
   });
 
@@ -96,7 +99,6 @@ export async function signInWithGoogle() {
 
   // O usuário será criado automaticamente quando o callback do OAuth for processado
   // através do listener onAuthStateChange no supabase.ts
-  
   return data;
 }
 
