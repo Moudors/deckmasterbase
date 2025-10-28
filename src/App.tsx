@@ -34,9 +34,10 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (loading && !forceShow) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
+      <div className="flex items-center justify-center h-screen bg-black text-white">
         <div className="text-center">
-          <div className="mb-4">Carregando...</div>
+          <img src="/logo192.png" alt="Logo" className="mx-auto mb-6 w-24 h-24" />
+          <div className="mb-4 text-xl font-bold">Carregando...</div>
           <div className="text-sm text-gray-400">
             Verificando autenticação...
           </div>
