@@ -1,6 +1,6 @@
 // Sistema de sincronização silenciosa offline-first
 import { db } from "../firebase";
-import { collection, addDoc, updateDoc, deleteDoc, doc, writeBatch } from "firebase/firestore";
+import { collection, addDoc, updateDoc, deleteDoc, doc, writeBatch } from "@/firebase";
 import storage from "./indexedDBStorage";
 
 // 🔇 LOGS DESABILITADOS (mode silencioso)

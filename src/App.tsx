@@ -1,7 +1,7 @@
 // src/App.tsx
 import React, { useEffect, ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useAuthState } from "react-firebase-hooks/auth";
+import { useAuthState } from "@/hooks/useAuthState";
 import { auth } from "@/firebase";
 
 // Páginas
@@ -21,7 +21,7 @@ import appInitializer from "@/lib/appInitializer";
 
 // Componente de rota protegida
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const [user, loading] = useAuthState(auth);
+  const [user, loading] = useAuthState();
 
   if (loading) {
     return (
@@ -39,7 +39,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 function App() {
-  const [user, loading] = useAuthState(auth);
+  const [user, loading] = useAuthState();
 
   useEffect(() => {
     // 🚀 Inicializa sistema offline-first

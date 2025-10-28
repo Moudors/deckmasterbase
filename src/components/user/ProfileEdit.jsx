@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { db } from "@/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc } from "@/firebase";
 import { updateDocSilent } from "@/lib/firestoreSilent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

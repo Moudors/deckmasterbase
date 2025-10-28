@@ -1,6 +1,6 @@
 // api/firebaseCards.js
 import { db } from "./firebaseClient";
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, orderBy } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, orderBy } from "@/firebase";
 
 export const createCard = async (cardData) => {
   const docRef = await addDoc(collection(db, "cards"), {

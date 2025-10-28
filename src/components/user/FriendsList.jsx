@@ -1,5 +1,5 @@
 import React from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs } from "@/firebase";
 import { db } from "@/firebase";
 import { updateDocSilent } from "@/lib/firestoreSilent";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

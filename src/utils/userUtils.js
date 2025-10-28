@@ -1,6 +1,6 @@
 // src/utils/userUtils.js
 import { db } from "@/firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc } from "@/firebase";
 import { updateDocSilent, deleteDocSilent } from "@/lib/firestoreSilent";
 import { v4 as uuidv4 } from "uuid";
 

@@ -18,7 +18,7 @@
 import unifiedStorage from './unifiedStorage';
 import syncManager from './syncManager';
 import { db } from '../firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from '../firebase';
 
 class QueryManager {
   constructor() {

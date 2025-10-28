@@ -23,7 +23,7 @@ import {
   query,
   where,
   serverTimestamp 
-} from 'firebase/firestore';
+} from '../firebase';
 import unifiedStorage from './unifiedStorage';
 
 const SYNC_INTERVAL = 30000; // 30 segundos

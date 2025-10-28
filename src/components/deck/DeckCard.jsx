@@ -4,7 +4,7 @@ import { Badge } from "../ui/badge";     // ✅ corrigido
 import { Layers, Sparkles, Image as ImageIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import { db } from "../../firebase";     // ✅ corrigido (firebase.ts está em /src)
-import { collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
+import { collection, query, where, orderBy, limit, getDocs } from "@/firebase";
 import { useImageCache } from "@/hooks/useImageCache";
 
 const formatColors = {

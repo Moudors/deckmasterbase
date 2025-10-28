@@ -2,9 +2,9 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, query, where } from "@/firebase";
 import { auth, db } from "@/firebase";
-import { useAuthState } from "react-firebase-hooks/auth";
+import { useAuthState } from "@/hooks/useAuthState";
 import { Search } from "lucide-react";
 import { updateDocSilent, deleteDocSilent, batchDeleteSilent } from "@/lib/firestoreSilent";
 import { localDeckManager } from "@/lib/localDeckManager";
@@ -24,7 +24,7 @@ const DEV_EMAIL = "moudorskingdom@gmail.com";
 
 function Home() {
   const navigate = useNavigate();
-  const [user] = useAuthState(auth);
+  const [user] = useAuthState();
   const [showSyncPanel, setShowSyncPanel] = useState(true);
 
   // � Normaliza o formato removendo caracteres estranhos

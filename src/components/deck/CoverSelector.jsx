@@ -9,7 +9,7 @@ import { Button } from "../ui/button"; // ✅ corrigido
 import { Loader2, Check, Image as ImageIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import { db } from "../../firebase"; // ✅ corrigido (firebase.ts está em /src)
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs } from "@/firebase";
 import { updateDocSilent } from "@/lib/firestoreSilent";
 
 export default function CoverSelector({ isOpen, onClose, deck, onSelectCover }) {

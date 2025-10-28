@@ -2,7 +2,7 @@
 // NOVO: Usa UnifiedStorage + QueryManager (offline-first)
 
 import { useQuery } from "@tanstack/react-query";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc } from "@/firebase";
 import { db } from "@/firebase";
 import { localDeckManager } from "./localDeckManager"; // Legacy - manter por compatibilidade
 import queryManager from "./queryManager"; // NOVO sistema
@@ -56,7 +56,7 @@ export async function fetchDeckCards(deckId) {
     }
 
     // Fallback para Firebase direto
-    const { getDocs, collection, query, where } = await import("firebase/firestore");
+    const { getDocs, collection, query, where } = await import("@/firebase");
     const q = query(collection(db, "cards"), where("deck_id", "==", deckId));
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));

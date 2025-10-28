@@ -14,7 +14,7 @@ import {
   collection,
   doc,
   getDoc,
-} from "firebase/firestore";
+} from "@/firebase";
 import { useQueryClient } from "@tanstack/react-query";
 import { addDocSilent, updateDocSilent } from "@/lib/firestoreSilent";
 

@@ -36,7 +36,7 @@ import {
   query,
   where,
   // onSnapshot removido - usando React Query agora
-} from "firebase/firestore";
+} from "@/firebase";
 import { addDocSilent } from "@/lib/firestoreSilent";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";

@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { localDeckManager } from "@/lib/localDeckManager";
 import { auth } from "@/firebase";
-import { useAuthState } from "react-firebase-hooks/auth";
+import { useAuthState } from "@/hooks/useAuthState";
 import {
   Select,
   SelectContent,
@@ -31,7 +31,7 @@ function CreateDeck() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const [user] = useAuthState(auth);
+  const [user] = useAuthState();
   const [deckName, setDeckName] = useState("");
   const [format, setFormat] = useState("");
   

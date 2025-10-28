@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, query, where } from "@/firebase";
 import { auth, db } from "@/firebase";
-import { useAuthState } from "react-firebase-hooks/auth";
+import { useAuthState } from "@/hooks/useAuthState";
 import { addDocSilent } from "@/lib/firestoreSilent";
 import AdvancedSearchForm from "./AdvancedSearchForm";
 import SearchResultsGrid from "./SearchResultsGrid";
@@ -17,7 +17,7 @@ interface AdvancedSearchPageProps {
 export default function AdvancedSearchPage({ onClose }: AdvancedSearchPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [user] = useAuthState(auth);
+  const [user] = useAuthState();
   const [cards, setCards] = useState<any[]>([]);
   const [selectedCard, setSelectedCard] = useState<any | null>(null);
   const [showDeckSelector, setShowDeckSelector] = useState(false);

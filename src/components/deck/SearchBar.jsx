@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Search, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { db } from "@/firebase";
-import { collection, doc } from "firebase/firestore";
+import { collection, doc } from "@/firebase";
 import { useQueryClient } from "@tanstack/react-query";
 import { addDocSilent, updateDocSilent } from "@/lib/firestoreSilent";
 

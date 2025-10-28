@@ -1,6 +1,6 @@
 // api/firebaseMessages.js
 import { db } from "./firebaseClient";
-import { collection, addDoc, getDocs, query, where, orderBy } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, orderBy } from "@/firebase";
 
 export const sendMessage = async (messageData) => {
   const docRef = await addDoc(collection(db, "messages"), {

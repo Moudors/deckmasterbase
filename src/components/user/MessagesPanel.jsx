@@ -7,7 +7,7 @@ import {
   where,
   orderBy,
   arrayUnion,
-} from "firebase/firestore";
+} from "@/firebase";
 import { db } from "@/firebase";
 import { updateDocSilent, deleteDocSilent } from "@/lib/firestoreSilent";
 import { ScrollArea } from "@/components/ui/scroll-area";
