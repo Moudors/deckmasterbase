@@ -226,27 +226,10 @@ export function useDeckCards(deckId) {
     queryFn: async () => {
       if (!deckId) return [];
 
-      // MODO ONLINE: Busca do Supabase e faz cache
-      if (connectivity.canSaveData) {
-        console.log(`🌐 Buscando cartas do deck ${deckId} online`);
-        try {
-          const onlineCards = await deckCardOperations.getDeckCards(deckId);
-          
-          // Salva no cache para uso offline
-          await offlineCacheManager.cacheDeckCards(deckId, onlineCards);
-          
-          return onlineCards;
-        } catch (err) {
-          console.warn('⚠️ Erro ao buscar cartas online, usando cache:', err);
-          
-          // Fallback para cache offline
-          return await offlineCacheManager.getCachedDeckCards(deckId);
-        }
-      }
-      
-      // MODO OFFLINE: Busca do cache
-      console.log(`📱 Modo offline - buscando cartas do deck ${deckId} do cache`);
-      return await offlineCacheManager.getCachedDeckCards(deckId);
+      // Sempre busca do Supabase, nunca do cache offline
+      console.log(`🌐 Buscando cartas do deck ${deckId} diretamente do Supabase (sem cache offline)`);
+      const onlineCards = await deckCardOperations.getDeckCards(deckId);
+      return onlineCards;
     },
     enabled: !!deckId,
     staleTime: 2 * 60 * 1000, // 2 minutos
@@ -282,44 +265,23 @@ export function useDeckCards(deckId) {
       console.log('✏️ Atualizando carta online:', { cardId, updates });
       return await deckCardOperations.updateDeckCard(cardId, updates);
     },
+    // Removido update otimístico: só atualiza cache após sucesso do banco
     onMutate: async ({ cardId, updates }) => {
-      // Cancela queries pendentes para evitar conflitos
       await queryClient.cancelQueries({ queryKey: ['cards', deckId] });
-
-      // Pega snapshot do estado anterior
+      // Snapshot para rollback, mas sem update otimístico
       const previousCards = queryClient.getQueryData(['cards', deckId]);
-
-      // Aplica update otimístico
-      queryClient.setQueryData(['cards', deckId], (old = []) =>
-        old.map(card => card.id === cardId ? { 
-          ...card, 
-          ...updates 
-        } : card)
-      );
-
-      // Retorna contexto para possível rollback
       return { previousCards, cardId, updates };
     },
     onSuccess: (updatedCard, { cardId, updates }) => {
-      // Atualiza a carta no cache com os dados retornados do Supabase
-      // e garante que os updates sejam aplicados
-      queryClient.setQueryData(['cards', deckId], (old = []) =>
-        old.map(card => card.id === cardId ? { 
-          ...card, 
-          ...updates, // Garante que os updates sejam aplicados
-          ...updatedCard // Sobrescreve com dados do servidor se houver
-        } : card)
-      );
-      
-      // Atualiza cache offline
-      const updatedCards = cards.map(card => 
-        card.id === cardId ? { 
-          ...card, 
-          ...updates,
-          ...updatedCard 
-        } : card
-      );
-      offlineCacheManager.cacheDeckCards(deckId, updatedCards);
+      // Após atualização, força refetch das cartas diretamente do Supabase
+      queryClient.invalidateQueries({ queryKey: ['cards', deckId] });
+      // Atualiza cache offline APENAS após sucesso
+      if (updatedCard) {
+        const cards = queryClient.getQueryData(['cards', deckId]) || [];
+        const updatedCards = cards.map(card => card.id === cardId ? { ...card, ...updatedCard } : card);
+        offlineCacheManager.cacheDeckCards(deckId, updatedCards);
+        console.log('[DEBUG] Cache offline atualizado após sucesso:', updatedCard);
+      }
     },
     onError: (err, { cardId }, context) => {
       // Rollback em caso de erro

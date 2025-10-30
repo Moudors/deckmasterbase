@@ -1,6 +1,6 @@
 import React, { useState, useRef, memo, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useLongPress } from "use-long-press";
+import { useCardSwipe } from "./CardSwipeHandler";
 import { Button } from "@/components/ui/button";
 import CardZoomModal from "./CardZoomModal";
 import { useImageCache } from "@/hooks/useImageCache";
@@ -19,10 +19,25 @@ function CardGridItem({
   deckOwnerId,
   isSelectionMode = false,
   isSelected = false,
-  onToggleSelect
+  onToggleSelect,
+  onDoubleClick, // Para abrir modal de trade
+  hasGreenBorder = false, // Indica que amigos querem essa carta
+  onLongPress // Custom long press handler (para deck de amigo)
 }) {
   const [isTransparent, setIsTransparent] = useState(false);
   const [showZoom, setShowZoom] = useState(false);
+  
+  // 🔍 DEBUG: Verificar se está recebendo hasGreenBorder
+  useEffect(() => {
+    if (hasGreenBorder) {
+      console.log("🟢 CardGridItem - CARTA COM GREEN BORDER:", {
+        cardName: card.card_name,
+        scryfallId: card.scryfall_id,
+        hasGreenBorder,
+        isSelectionMode
+      });
+    }
+  }, [hasGreenBorder, card.card_name, card.scryfall_id, isSelectionMode]);
   
   // Usar um estado persistente para currentFaceIndex baseado no ID da carta
   const cardKey = `${card.id}-${card.scryfall_id}`;
@@ -34,51 +49,126 @@ function CardGridItem({
   useEffect(() => {
     faceStateMap.set(cardKey, currentFaceIndex);
   }, [cardKey, currentFaceIndex]);
-  const lastTap = useRef(0);
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
+
+  // 🔄 Long press manual com timeout
+  const longPressTimer = useRef(null);
+  const longPressTriggered = useRef(false);
+
+  const handlePressStart = (e) => {
+    if (isViewOnly || isSelectionMode) return;
+    
+    longPressTriggered.current = false;
+    console.log('[DEBUG] Long press iniciado', { hasCustomHandler: !!onLongPress });
+    
+    longPressTimer.current = setTimeout(() => {
+      console.log('[DEBUG] Long press detectado', { hasCustomHandler: !!onLongPress });
+      longPressTriggered.current = true;
+      
+      // Se tem handler customizado (deck de amigo), usa ele
+      if (onLongPress) {
+        onLongPress(card);
+      } else {
+        // Senão, abre o seletor de arte (comportamento padrão)
+        onShowArtSelector?.(card);
+      }
+    }, 500); // 500ms
+  };
+
+  const handlePressEnd = (e) => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    
+    if (longPressTriggered.current) {
+      console.log('[DEBUG] Long press completado');
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const handlePressCancel = () => {
+    if (longPressTimer.current) {
+      console.log('[DEBUG] Long press cancelado');
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    longPressTriggered.current = false;
+  };
+
+  // Limpar timer ao desmontar
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    };
+  }, []);
 
   // 🔄 Determinar se é carta dupla face
   const hasMultipleFaces = card.card_faces && card.card_faces.length > 1;
   const currentFace = hasMultipleFaces ? card.card_faces[currentFaceIndex] : card;
   
-  // Prioriza image_url da carta (que pode ter sido atualizado via ArtSelector)
-  // Para cartas dupla face, sempre usa a imagem da face atual
-  const displayImageUrl = hasMultipleFaces 
-    ? (currentFace.image_uris?.normal || currentFace.image_url)
-    : (card.image_url || currentFace.image_uris?.normal || currentFace.image_url);
+  // DEBUG COMPLETO
+  if (hasMultipleFaces) {
+    console.log("� DEBUG FACES COMPLETO:", {
+      cardName: card.card_name,
+      currentFaceIndex,
+      allFaces: card.card_faces,
+      currentFace: currentFace,
+      cardImageUrl: card.image_url
+    });
+  }
+  
+  // �🖼️ Lógica de URL de imagem para diferentes tipos de cartas dupla face
+  let displayImageUrl;
+  
+  if (hasMultipleFaces) {
+    // Para cartas dupla face, tentar pegar a imagem da face atual
+    // Suporta diferentes layouts do Scryfall (transform, modal_dfc, etc)
+    displayImageUrl = 
+      currentFace.image_uris?.normal ||       // Scryfall padrão (cada face tem image_uris)
+      currentFace.image_uris?.large ||
+      currentFace.image_uris?.png ||
+      currentFace.image_url ||                 // Backup: image_url salva no banco
+      card.image_url;                          // Fallback: imagem principal do card
+  } else {
+    // Para cartas normais, prioriza image_url (pode ter sido alterado via ArtSelector)
+    displayImageUrl = 
+      card.image_url || 
+      card.image_uris?.normal || 
+      card.image_uris?.large ||
+      card.image_uris?.png;
+  }
 
   // 🖼️ Cache de imagem local (IndexedDB)
   const cachedImageUrl = useImageCache(displayImageUrl);
+    const { handleTouchStart, handleTouchEnd } = useCardSwipe({
+      onSwipeRight: () => {
+        if (!isSelectionMode) setShowZoom(true);
+      },
+      onDoubleTap: () => {
+        handleDoubleClick();
+      }
+    });
+  
+    // Long press para menu de arte - REMOVIDO (usando manual agora)
 
-  // 🔄 Swipe para direita: abre zoom
-  const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  };
+  // removido: funções antigas de touch
 
-  const handleTouchEndSwipe = (e) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const touchEndY = e.changedTouches[0].clientY;
-    const diffX = touchEndX - touchStartX.current;
-    const diffY = Math.abs(touchEndY - touchStartY.current);
-
-    // Swipe para direita: abrir zoom (apenas se movimento horizontal > vertical)
-    if (diffX > 100 && diffY < 50 && !isSelectionMode) {
-      setShowZoom(true);
+  // 🔄 Duplo clique: alterna transparência, trade, ou modal de trade
+  const handleDoubleClick = (e) => {
+    // Se for prop onDoubleClick (Trade), usa ela
+    if (onDoubleClick) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      onDoubleClick(card);
       return;
     }
-
-    // Detectar duplo toque (mantém funcionalidade anterior)
-    const now = Date.now();
-    if (now - lastTap.current < 300) {
-      handleDoubleClick();
-    }
-    lastTap.current = now;
-  };
-
-  // 🔄 Duplo clique: alterna transparência ou trade
-  const handleDoubleClick = () => {
+    
+    // Comportamento padrão
     if (deckOwnerId === currentUserId) {
       setIsTransparent(prev => !prev);
       onToggleAcquired?.({ ...card, acquired: !card.acquired });
@@ -88,21 +178,32 @@ function CardGridItem({
   };
 
   // 🔄 Alternar face da carta dupla face
-  const toggleFace = (e) => {
-    e.stopPropagation();
-    
+  // Alterna a face da carta dupla face
+  const toggleFace = () => {
+    console.log("🔄 toggleFace chamado", { 
+      hasMultipleFaces, 
+      currentFaceIndex, 
+      totalFaces: card.card_faces?.length,
+      cardName: card.card_name 
+    });
     if (hasMultipleFaces) {
       const newIndex = (currentFaceIndex + 1) % card.card_faces.length;
+      console.log("🔄 Mudando para face:", newIndex);
       setCurrentFaceIndex(newIndex);
     }
   };
 
   // 🔄 Clique longo: abre direto o seletor de arte
-  const bindLongPress = useLongPress(() => {
-    if (!isViewOnly) {
-      onShowArtSelector?.(card); // 🔑 abre direto o ArtSelector
-    }
-  }, { threshold: 500 });
+  // (Removido: duplicata de bindLongPress)
+
+  // 🔍 DEBUG DIRETO NO RENDER
+  console.log("🔍 CardGridItem RENDER:", {
+    cardName: card.card_name,
+    hasGreenBorder,
+    willRenderGreenCircle: hasGreenBorder === true,
+    hasGreenBorderType: typeof hasGreenBorder,
+    hasGreenBorderValue: JSON.stringify(hasGreenBorder)
+  });
 
   return (
     <>
@@ -115,16 +216,44 @@ function CardGridItem({
       )}
 
       <motion.div
-        {...bindLongPress()}
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="relative group"
-        onDoubleClick={handleDoubleClick}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEndSwipe}
+  onTouchStart={handleTouchStart}
+  onTouchEnd={handleTouchEnd}
+  initial={{ opacity: 0, scale: 0.9 }}
+  animate={{ opacity: 1, scale: 1 }}
+  exit={{ opacity: 0, scale: 0.9 }}
+  className="relative group"
+  onDoubleClick={hasGreenBorder ? handleDoubleClick : undefined}
       >
-      <div className="relative rounded-lg overflow-hidden cursor-pointer focus:outline-none focus:ring-0">
+        {/* Bolinha verde - indica que amigos querem esta carta */}
+        {hasGreenBorder && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onDoubleClick?.(card);
+            }}
+            aria-label="Ver amigos interessados"
+            className="absolute top-1 left-1 z-50 w-6 h-6 rounded-full bg-green-500 bg-opacity-80 border-2 border-white shadow-lg hover:bg-green-600 hover:bg-opacity-90 hover:scale-110 active:scale-95 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-1"
+            style={{ 
+              boxShadow: '0 0 0 2px white, 0 0 10px rgba(34, 197, 94, 0.5)',
+              pointerEvents: 'auto'
+            }}
+            title="Clique para ver quem quer essa carta"
+          >
+            <span className="sr-only">Amigos querem essa carta</span>
+          </button>
+        )}
+
+      <div 
+        className="relative rounded-lg overflow-hidden cursor-pointer focus:outline-none focus:ring-0"
+        onMouseDown={handlePressStart}
+        onMouseUp={handlePressEnd}
+        onMouseLeave={handlePressCancel}
+        onTouchStart={handlePressStart}
+        onTouchEnd={handlePressEnd}
+        onTouchCancel={handlePressCancel}
+      >
         {/* Botão de seleção para modo de deleção */}
         {isSelectionMode && (
           <div className="absolute top-2 left-2 z-20">
@@ -163,7 +292,12 @@ function CardGridItem({
         {/* Botão de alternar face (canto superior direito) */}
         {hasMultipleFaces && (
           <button
-            onClick={toggleFace}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log("🔘 Botão de face clicado!");
+              toggleFace();
+            }}
             className="absolute top-2 right-2 w-7 h-7 bg-orange-500/90 hover:bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-10"
             aria-label="Alternar face da carta"
             title={`Face ${currentFaceIndex + 1}/${card.card_faces.length}: ${currentFace.name || 'Face ' + (currentFaceIndex + 1)}`}
@@ -206,8 +340,10 @@ export default memo(CardGridItem, (prevProps, nextProps) => {
     prevProps.card.id === nextProps.card.id &&
     prevProps.card.quantity === nextProps.card.quantity &&
     prevProps.card.acquired === nextProps.card.acquired &&
-    prevProps.card.image_url === nextProps.card.image_url && // ✅ Checa mudança de imagem
+    prevProps.card.image_url === nextProps.card.image_url &&
+    JSON.stringify(prevProps.card.card_faces) === JSON.stringify(nextProps.card.card_faces) &&
     prevProps.isSelected === nextProps.isSelected &&
-    prevProps.isSelectionMode === nextProps.isSelectionMode
+    prevProps.isSelectionMode === nextProps.isSelectionMode &&
+    prevProps.hasGreenBorder === nextProps.hasGreenBorder // ✅ CRÍTICO: Verifica green border!
   );
 });

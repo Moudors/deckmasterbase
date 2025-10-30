@@ -1,13 +1,17 @@
 // src/App.tsx
 import React, { useEffect, ReactNode } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { useAuthState } from "./hooks/useAuthState";
 
 // Páginas
 import Home from "@/pages/Home";
 import Deckbuilder from "@/pages/Deckbuilder";
 import CreateDeck from "@/pages/CreateDeck";
-import LoginPage from "@/pages/LoginPage"; // ✅ nome correto
+import LoginPage from "@/pages/LoginPage";
+import SignUpPage from "@/pages/SignUpPage";
+import FriendDecksPage from "@/pages/FriendDecksPage";
+import Collection from "@/pages/Collection";
+import Trade from "@/pages/Trade";
 
 // Componente de debug (apenas em desenvolvimento)
 import { CacheDebugPanel } from "@/components/ui/CacheDebugPanel";
@@ -57,6 +61,7 @@ function App() {
   console.log('🚀 App inicializando...');
   
   const [user, loading] = useAuthState();
+  const navigate = useNavigate();
 
   console.log('👤 App - user:', user ? user.email : 'sem usuário', 'loading:', loading);
 
@@ -79,7 +84,7 @@ function App() {
     }
   }, [user, loading]);
 
-  // ✅ Detecta callback do OAuth
+  // ✅ Detecta callback do OAuth e redireciona para home
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const accessToken = urlParams.get('access_token');
@@ -88,18 +93,32 @@ function App() {
     if (accessToken) {
       console.log('🔄 Callback OAuth detectado, processando tokens...');
       // O supabase já está processando automaticamente através do onAuthStateChange
+      // Aguardar um pouco para o estado ser atualizado e então redirecionar
+      setTimeout(() => {
+        console.log('✅ Redirecionando para home após OAuth...');
+        navigate('/', { replace: true });
+      }, 1000);
     }
-  }, []);
+  }, [navigate]);
 
   return (
     <>
       <Routes>
-        {/* Rota pública */}
+        {/* Rotas públicas */}
         <Route 
           path="/login" 
           element={
             <React.Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-900 text-white">Carregando login...</div>}>
               <LoginPage />
+            </React.Suspense>
+          } 
+        />
+        
+        <Route 
+          path="/signup" 
+          element={
+            <React.Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-900 text-white">Carregando cadastro...</div>}>
+              <SignUpPage />
             </React.Suspense>
           } 
         />
@@ -130,6 +149,33 @@ function App() {
           }
         />
 
+        <Route
+          path="/friend/:friendId/decks"
+          element={
+            <ProtectedRoute>
+              <FriendDecksPage />
+            </ProtectedRoute>
+          }
+        />
+        
+        <Route
+          path="/collection"
+          element={
+            <ProtectedRoute>
+              <Collection />
+            </ProtectedRoute>
+          }
+        />
+        
+        <Route
+          path="/trade"
+          element={
+            <ProtectedRoute>
+              <Trade />
+            </ProtectedRoute>
+          }
+        />
+        
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -5,6 +5,7 @@ import { useAuthState } from "../hooks/useAuthState";
 import { useConnectivity } from "@/lib/connectivityManager";
 import { deckOperations } from "@/lib/supabaseOperations";
 import { supabase } from "@/supabase";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Select,
   SelectContent,
@@ -32,6 +33,7 @@ const CreateDeck = () => {
   const location = useLocation();
   const [user] = useAuthState();
   const { isOnline, canSaveData } = useConnectivity();
+  const queryClient = useQueryClient();
 
   const [deckName, setDeckName] = useState("");
   const [format, setFormat] = useState("commander");
@@ -89,6 +91,31 @@ const CreateDeck = () => {
       
       console.log("👤 Usuário autenticado:", supabaseUser.email, "ID:", supabaseUser.id);
       
+      // 🔒 Verificação de formatos especiais (apenas um por usuário)
+      if (format === "Coleção de cartas" || format === "Trades") {
+        console.log("🔍 Verificando duplicata de formato especial:", format);
+        
+        const { data: existingDecks, error: queryError } = await supabase
+          .from("decks")
+          .select("id, name, format")
+          .eq("owner_id", supabaseUser.id)
+          .eq("format", format);
+        
+        if (queryError) {
+          console.error("❌ Erro ao verificar duplicata:", queryError);
+        }
+        
+        if (existingDecks && existingDecks.length > 0) {
+          const message = format === "Coleção de cartas" 
+            ? "Você já tem uma Coleção de cartas criada" 
+            : "Você já tem um deck de Trades criado";
+          
+          console.log("⚠️ Formato especial duplicado detectado:", existingDecks[0]);
+          navigate("/", { state: { message, type: "warning" } });
+          return;
+        }
+      }
+      
       // 🎯 Cria o deck ONLINE diretamente
       const newDeck = await deckOperations.createDeck({
         name: deckName,
@@ -98,10 +125,32 @@ const CreateDeck = () => {
         cover_image_url: getArtCropUrl(cardToAdd?.image_url) || "",
       });
 
-      console.log("✅ Deck criado online com sucesso:", newDeck.id);
+      console.log("✅ Deck criado online com sucesso:");
+      console.log("   ID:", newDeck.id);
+      console.log("   Nome:", newDeck.name);
+      console.log("   Formato:", newDeck.format);
+      console.log("   Owner ID:", newDeck.owner_id);
+      console.log("   Deck completo:", newDeck);
       
       if (cardToAdd?.image_url) {
         console.log("🎨 Capa do deck definida:", cardToAdd.image_url);
+      }
+
+      // Invalida o cache de decks para forçar atualização
+      await queryClient.invalidateQueries({ queryKey: ["decks"] });
+      console.log("🔄 Cache de decks invalidado");
+      
+      // Força o refetch dos decks
+      await queryClient.refetchQueries({ queryKey: ["decks"] });
+      console.log("🔄 Decks recarregados");
+
+      // 🎴 Se for Coleção de cartas, redireciona para a página Collection
+      if (format === "Coleção de cartas") {
+        console.log("📚 Redirecionando para página Collection");
+        // Aguarda mais tempo para garantir que o deck está carregado
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        navigate("/collection");
+        return;
       }
 
       // 🎴 Se há uma carta para adicionar, redireciona com a carta no state
@@ -258,7 +307,14 @@ const CreateDeck = () => {
               <SelectTrigger className="w-full bg-gray-800 border-gray-600">
                 <SelectValue placeholder="Selecione o formato" />
               </SelectTrigger>
-              <SelectContent className="bg-gray-800 border-gray-600">
+              <SelectContent 
+                className="bg-gray-800 border-gray-600 max-h-[300px] overflow-y-auto" 
+                position="popper"
+                side="bottom" 
+                align="start"
+                sideOffset={5}
+                avoidCollisions={false}
+              >
                 <SelectItem value="commander">Commander</SelectItem>
                 <SelectItem value="commander 300">Commander 300</SelectItem>
                 <SelectItem value="commander 500">Commander 500</SelectItem>
@@ -272,6 +328,8 @@ const CreateDeck = () => {
                 <SelectItem value="alchemy">Alchemy</SelectItem>
                 <SelectItem value="brawl">Brawl</SelectItem>
                 <SelectItem value="casual">Casual</SelectItem>
+                <SelectItem value="Coleção de cartas">Coleção de cartas</SelectItem>
+                <SelectItem value="Trades">Trades</SelectItem>
               </SelectContent>
             </Select>
           </div>

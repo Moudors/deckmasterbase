@@ -75,8 +75,14 @@ class OfflineCacheManager {
         return [];
       }
 
-      console.log(`📂 ${deckCache.cards.length} cartas do deck ${deckId} carregadas do cache`);
-      return deckCache.cards;
+      // Força conversão do campo is_transparent para booleano
+      const cards = (deckCache.cards || []).map(card => ({
+        ...card,
+        is_transparent: card.is_transparent === true || card.is_transparent === 'true'
+      }));
+
+      console.log(`📂 ${cards.length} cartas do deck ${deckId} carregadas do cache`);
+      return cards;
     } catch (err) {
       console.error('❌ Erro ao buscar cartas do cache:', err);
       return [];

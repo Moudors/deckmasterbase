@@ -1,12 +1,13 @@
 import React from "react";
 import { userOperations } from "@/lib/supabaseOperations";
+import { supabase } from "@/supabase";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Users, ChevronRight } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+
 
 export default function FriendsList({ user }) {
   const [friends, setFriends] = React.useState([]);
@@ -15,25 +16,51 @@ export default function FriendsList({ user }) {
 
   React.useEffect(() => {
     const fetchFriends = async () => {
-      if (!user?.friends || user.friends.length === 0) {
+      if (!user?.id) {
         setFriends([]);
         setLoading(false);
         return;
       }
-
-      const allUsers = await userOperations.getAllUsers();
-      const userFriends = allUsers.filter(u => user.friends.includes(u.id));
-      setFriends(userFriends);
+      // Buscar amizades aceitas na tabela friendships
+      const { data: friendshipRows, error } = await supabase
+        .from('friendships')
+        .select('friend_id')
+        .eq('user_id', user.id)
+        .eq('status', 'accepted');
+      console.log('[DEBUG] friendshipRows:', friendshipRows);
+      if (error) console.error('[DEBUG] Erro friendships:', error);
+      if (!friendshipRows || friendshipRows.length === 0) {
+        setFriends([]);
+        setLoading(false);
+        return;
+      }
+      const friendIds = friendshipRows.map(f => f.friend_id);
+      console.log('[DEBUG] friendIds:', friendIds);
+      // Buscar dados dos amigos na tabela users
+      const { data: friendUsers, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .in('id', friendIds);
+      console.log('[DEBUG] friendUsers:', friendUsers);
+      if (userError) console.error('[DEBUG] Erro users:', userError);
+      setFriends(friendUsers || []);
       setLoading(false);
     };
-
     fetchFriends();
-  }, [user?.friends]);
+  }, [user?.id]);
 
   const handleRemoveFriend = async (friendId) => {
-    await userOperations.updateUser(user.id, {
-      friends: user.friends.filter(id => id !== friendId),
-    });
+    // Remove amizade da tabela friendships
+    await supabase
+      .from('friendships')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('friend_id', friendId);
+    await supabase
+      .from('friendships')
+      .delete()
+      .eq('user_id', friendId)
+      .eq('friend_id', user.id);
     setFriends(prev => prev.filter(f => f.id !== friendId));
   };
 
@@ -43,7 +70,7 @@ export default function FriendsList({ user }) {
   };
 
   const handleFriendClick = (friend) => {
-    navigate(createPageUrl("FriendDecks") + `?friendId=${friend.id}&friendName=${encodeURIComponent(friend.displayName)}`);
+    navigate(`/friend/${friend.id}/decks`);
   };
 
   return (
@@ -70,11 +97,11 @@ export default function FriendsList({ user }) {
                   <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => handleFriendClick(friend)}>
                     <Avatar className="h-10 w-10">
                       <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
-                        {getInitials(friend.displayName || friend.email)}
+                        {getInitials(friend.display_name || friend.email)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="text-left flex-1 min-w-0">
-                      <p className="font-medium text-white truncate">{friend.displayName}</p>
+                      <p className="font-medium text-white truncate">{friend.display_name || friend.email}</p>
                       <p className="text-xs text-gray-500 truncate">{friend.email}</p>
                     </div>
                     <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-orange-500 transition-colors flex-shrink-0" />

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { messageOperations, userOperations } from "@/lib/supabaseOperations";
+import { supabase } from "@/supabase";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,13 +19,19 @@ import { format } from "date-fns";
 export default function MessagesPanel({ user }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const fetchMessages = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
-
-    const msgs = await messageOperations.getMessagesByRecipient(user.id);
-    setMessages(msgs);
+    setError(null);
+    try {
+      const msgs = await messageOperations.getUserMessages(user.id);
+      console.log('[DEBUG] Mensagens recebidas:', msgs);
+      setMessages(msgs);
+    } catch (err) {
+      setError(err.message || 'Erro ao buscar mensagens');
+    }
     setLoading(false);
   }, [user?.id]);
 
@@ -56,16 +63,73 @@ export default function MessagesPanel({ user }) {
   const handleAccept = async (msg) => {
     try {
       // Buscar dados atuais dos usuários
+      console.log("[DEBUG] user.id:", user.id);
+      console.log("[DEBUG] msg.sender_id:", msg.sender_id);
       const currentUser = await userOperations.getUser(user.id);
       const senderUser = await userOperations.getUser(msg.sender_id);
+      console.log("[DEBUG] currentUser:", currentUser);
+      console.log("[DEBUG] senderUser:", senderUser);
 
-      // adiciona cada um na lista de amigos do outro
-      await userOperations.updateUser(user.id, {
-        friends: [...(currentUser.friends || []), msg.sender_id],
-      });
-      await userOperations.updateUser(msg.sender_id, {
-        friends: [...(senderUser.friends || []), user.id],
-      });
+      // MIGRAÇÃO: Adiciona amizade na tabela friendships
+      if (!currentUser || !senderUser) {
+        throw new Error("Usuário não encontrado para amizade");
+      }
+
+      // Verifica se já existe amizade
+      const { data: existingFriendship1 } = await supabase
+        .from('friendships')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('friend_id', msg.sender_id)
+        .single();
+      const { data: existingFriendship2 } = await supabase
+        .from('friendships')
+        .select('*')
+        .eq('user_id', msg.sender_id)
+        .eq('friend_id', user.id)
+        .single();
+
+      // Atualiza ou insere amizade para ambos
+      let err1 = null;
+      if (existingFriendship1) {
+        const { error } = await supabase
+          .from('friendships')
+          .update({ status: 'accepted' })
+          .eq('user_id', user.id)
+          .eq('friend_id', msg.sender_id);
+        err1 = error;
+      } else {
+        const { error } = await supabase
+          .from('friendships')
+          .insert({
+            user_id: user.id,
+            friend_id: msg.sender_id,
+            status: 'accepted',
+            created_at: new Date().toISOString()
+          });
+        err1 = error;
+      }
+
+      let err2 = null;
+      if (existingFriendship2) {
+        const { error } = await supabase
+          .from('friendships')
+          .update({ status: 'accepted' })
+          .eq('user_id', msg.sender_id)
+          .eq('friend_id', user.id);
+        err2 = error;
+      } else {
+        const { error } = await supabase
+          .from('friendships')
+          .insert({
+            user_id: msg.sender_id,
+            friend_id: user.id,
+            status: 'accepted',
+            created_at: new Date().toISOString()
+          });
+        err2 = error;
+      }
+      if (err1 || err2) throw err1 || err2;
 
       // atualiza status da mensagem
       await messageOperations.updateMessage(msg.id, {
@@ -73,11 +137,12 @@ export default function MessagesPanel({ user }) {
         read: true,
       });
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msg.id ? { ...m, status: "accepted", read: true } : m
-        )
-      );
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+
+      // Forçar reload para garantir atualização da lista de amigos
+      if (typeof window !== "undefined" && window.location) {
+        setTimeout(() => window.location.reload(), 500);
+      }
     } catch (err) {
       console.error("Erro ao aceitar solicitação:", err);
     }
@@ -91,11 +156,7 @@ export default function MessagesPanel({ user }) {
         read: true,
       });
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msg.id ? { ...m, status: "rejected", read: true } : m
-        )
-      );
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id));
     } catch (err) {
       console.error("Erro ao recusar solicitação:", err);
     }
@@ -129,6 +190,11 @@ export default function MessagesPanel({ user }) {
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <RefreshCw className="w-6 h-6 animate-spin text-gray-500" />
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center h-full text-center p-4">
+            <Mail className="w-12 h-12 text-red-600 mb-2" />
+            <p className="text-red-500 text-sm">{error}</p>
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
@@ -166,13 +232,16 @@ export default function MessagesPanel({ user }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 whitespace-nowrap">
-                        {format(
-                          new Date(
-                            message.created_date?.toDate?.() ||
-                              message.created_date
-                          ),
-                          "dd/MM HH:mm"
-                        )}
+                        {(() => {
+                          let dateValue = message.created_date?.toDate?.() || message.created_date;
+                          let dateObj = dateValue ? new Date(dateValue) : null;
+                          if (!dateObj || isNaN(dateObj.getTime())) return "";
+                          try {
+                            return format(dateObj, "dd/MM HH:mm");
+                          } catch {
+                            return "";
+                          }
+                        })()}
                       </span>
                       {message.type !== "friend_request" && (
                         <Button
@@ -191,7 +260,7 @@ export default function MessagesPanel({ user }) {
                   </div>
 
                   <p className="text-sm text-gray-300 leading-relaxed mb-2">
-                    {message.message}
+                    {message.content}
                   </p>
 
                   {/* ✅ Botões de aceitar/recusar solicitação */}

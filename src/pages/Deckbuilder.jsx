@@ -4,7 +4,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Eye, Trash2 } from "lucide-react";
 import { useAuthState } from "../hooks/useAuthState";
 import SearchBar from "../components/deck/SearchBar";
+import { useDoubleClickTransparency } from "../components/deck/DoubleClickTransparencyManager";
 import CardGridItem from "../components/deck/CardGridItem";
+import TradeConfirmDialog from "../components/deck/TradeConfirmDialog";
+import BuyRequestModal from "../components/deck/BuyRequestModal";
 import ArtSelector from "../components/deck/ArtSelector";
 import DeleteQuantityDialog from "../components/deck/DeleteQuantityDialog";
 import { Button } from "../components/ui/button";
@@ -14,18 +17,12 @@ import { useConnectivity } from "../lib/connectivityManager";
 import { useDecks, useDeckCards } from "../lib/useUnifiedDecks";
 
 const Deckbuilder = () => {
+  // Declaração única dos hooks e estados
   const { id: deckId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const [user] = useAuthState();
-  
-  // Estado para controlar o delay antes de mostrar "deck não encontrado"
-  const [searchTimeout, setSearchTimeout] = useState(false);
-  
-  // Estado de conectividade
   const { isOnline, canSaveData } = useConnectivity();
-  
-  // Hook unificado para decks
   const { 
     decks = [], 
     isLoading: decksLoading, 
@@ -33,7 +30,6 @@ const Deckbuilder = () => {
     updateDeck,
     refetch: refetchDecks
   } = useDecks();
-  
   const { 
     cards: deckCards = [], 
     isLoading: cardsLoading, 
@@ -43,8 +39,11 @@ const Deckbuilder = () => {
     deleteCard,
     canEdit 
   } = useDeckCards(deckId);
-  
-  // Estados locais
+  const { refetch: refetchCards } = useDeckCards(deckId);
+  const doubleClickTransparency = useDoubleClickTransparency(updateCard, refetchCards);
+  const [showTradeDialog, setShowTradeDialog] = useState(false);
+  const [selectedCardForTrade, setSelectedCardForTrade] = useState(null);
+  const [searchTimeout, setSearchTimeout] = useState(false);
   const [error, setError] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -53,6 +52,9 @@ const Deckbuilder = () => {
   const [selectedCardForArt, setSelectedCardForArt] = useState(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [cardsToDelete, setCardsToDelete] = useState([]);
+  const [showBuyRequestModal, setShowBuyRequestModal] = useState(false);
+  const [selectedCardForBuy, setSelectedCardForBuy] = useState(null);
+  const [deckOwnerName, setDeckOwnerName] = useState("");
 
   // Protege contra decks locais - sistema agora é online-first apenas
   useEffect(() => {
@@ -103,28 +105,81 @@ const Deckbuilder = () => {
   }, [deckId, decksLoading, decks, refetchDecks]);
 
   // Busca o deck atual
+  const [remoteDeck, setRemoteDeck] = useState(null);
+  useEffect(() => {
+    if (!decks?.find(deck => deck.id === deckId)) {
+      // Se não encontrar localmente, busca direto do banco
+      import("../lib/supabaseOperations").then(({ deckOperations }) => {
+        deckOperations.getDeck(deckId)
+          .then(deck => {
+            if (deck) {
+              setRemoteDeck(deck);
+              console.log("✅ Deck encontrado remotamente:", deck.name);
+            } else {
+              setRemoteDeck(null);
+              console.log("❌ Deck não encontrado remotamente");
+            }
+          })
+          .catch(err => {
+            setRemoteDeck(null);
+            console.error("❌ Erro ao buscar deck remotamente:", err);
+          });
+      });
+    } else {
+      setRemoteDeck(null);
+    }
+  }, [decks, deckId]);
+
   const currentDeck = useMemo(() => {
-    console.log("🔍 Buscando deck:", deckId);
-    console.log("📋 Decks disponíveis:", decks?.length || 0);
-    console.log("📋 IDs dos decks:", decks?.map(d => d.id) || []);
-    
-    const foundDeck = decks?.find(deck => deck.id === deckId) || null;
-    
+    const foundDeck = decks?.find(deck => deck.id === deckId) || remoteDeck;
     if (foundDeck) {
       console.log("✅ Deck encontrado:", foundDeck.name);
     } else {
-      console.log("❌ Deck não encontrado na lista");
+      console.log("❌ Deck não encontrado na lista nem remotamente");
     }
-    
     return foundDeck;
-  }, [decks, deckId]);
+  }, [decks, deckId, remoteDeck]);
 
   // Estados de carregamento e erro
   const isLoading = decksLoading || cardsLoading;
   const deckError = decksError || cardsError;
 
-  // Determina se é visualização apenas
-  const isViewOnly = !canEdit;
+  // Determina se é visualização apenas (bloqueia busca para decks de amigos)
+  const isViewOnly = !canEdit || (currentDeck && user?.id !== currentDeck.owner_id);
+  
+  // Verifica se é um deck Trade de um amigo
+  const isFriendTradeDeck = useMemo(() => {
+    const result = isViewOnly && 
+           currentDeck && 
+           (currentDeck.format === "Trade" || currentDeck.format === "Trades");
+    console.log("🔍 isFriendTradeDeck:", {
+      result,
+      isViewOnly,
+      currentDeck: currentDeck?.deck_name,
+      format: currentDeck?.format,
+      ownerId: currentDeck?.owner_id,
+      userId: user?.id
+    });
+    return result;
+  }, [isViewOnly, currentDeck, user?.id]);
+
+  // Buscar nome do dono do deck se for deck de amigo
+  useEffect(() => {
+    const fetchOwnerName = async () => {
+      if (currentDeck?.owner_id && isViewOnly) {
+        try {
+          const { userOperations } = await import("../lib/supabaseOperations");
+          const ownerData = await userOperations.getUser(currentDeck.owner_id);
+          setDeckOwnerName(ownerData?.display_name || "Amigo");
+        } catch (err) {
+          console.error("Erro ao buscar nome do dono:", err);
+          setDeckOwnerName("Amigo");
+        }
+      }
+    };
+    
+    fetchOwnerName();
+  }, [currentDeck?.owner_id, isViewOnly]);
 
   // Adiciona carta do Advanced Search (controle de execução única)
   const hasAddedRef = React.useRef(false);
@@ -177,19 +232,6 @@ const Deckbuilder = () => {
   }, [location.state?.addCard, deckId, canEdit, addCard, navigate, location.pathname, location.state]);
 
   // Handlers para cartas do deck
-  const handleToggleAcquired = async (card) => {
-    if (!canEdit) {
-      setError("Não é possível modificar cartas offline. Conecte-se à internet.");
-      return;
-    }
-
-    try {
-      await updateCard({ cardId: card.id, updates: { acquired: !card.acquired } });
-    } catch (error) {
-      console.error("❌ Erro ao alterar status:", error);
-      setError(error.message || "Erro ao alterar status da carta");
-    }
-  };
 
   const handleQuantityChange = async (card, newQuantity) => {
     if (!canEdit) {
@@ -273,12 +315,32 @@ const Deckbuilder = () => {
 
   // Handler para seleção de arte
   const handleShowArtSelector = (card) => {
-    if (isViewOnly) return;
+    console.log('[DEBUG] handleShowArtSelector chamado', { card, isViewOnly });
+    if (isViewOnly) {
+      console.log('[DEBUG] Não abrindo modal - modo view only');
+      return;
+    }
+    console.log('[DEBUG] Abrindo ArtSelector modal');
     setSelectedCardForArt(card);
     setShowArtSelector(true);
   };
 
   const handleSelectArt = async (artData) => {
+      let updates = { ...artData };
+      // Se for carta dupla face, atualiza image_url e image_uris.normal em ambas as faces
+      if (selectedCardForArt.card_faces && Array.isArray(selectedCardForArt.card_faces)) {
+        const newCardFaces = selectedCardForArt.card_faces.map(face => ({
+          ...face,
+          image_url: artData.image_url,
+          image_uris: {
+            ...face.image_uris,
+            normal: artData.image_url
+          }
+        }));
+        updates.card_faces = newCardFaces;
+      }
+      // Log de debug para verificar updates enviados
+      console.log('[DEBUG] handleSelectArt - updates:', updates);
     if (selectedCardForArt && !isViewOnly) {
       // Se veio da busca avançada, não faz nada (adição já foi feita pelo fluxo principal)
       if (location.state?.addCard) {
@@ -288,9 +350,22 @@ const Deckbuilder = () => {
       }
       // Fluxo normal: alterar arte de carta já existente
       try {
+        let updates = { ...artData };
+        // Se for carta dupla face, atualiza image_url em ambas as faces
+        if (selectedCardForArt.card_faces && Array.isArray(selectedCardForArt.card_faces)) {
+          const newCardFaces = selectedCardForArt.card_faces.map(face => ({
+            ...face,
+            image_url: artData.image_url,
+            image_uris: {
+              ...face.image_uris,
+              normal: artData.image_url
+            }
+          }));
+          updates.card_faces = newCardFaces;
+        }
         await updateCard({ 
           cardId: selectedCardForArt.id, 
-          updates: artData 
+          updates
         });
         setShowArtSelector(false);
         setSelectedCardForArt(null);
@@ -452,20 +527,111 @@ const Deckbuilder = () => {
         ) : (
           <div className="grid grid-cols-3 gap-4">
             <AnimatePresence mode="popLayout">
-              {deckCards.map((card) => (
-                <CardGridItem
-                  key={card.id}
-                  card={card}
-                  onToggleAcquired={handleToggleAcquired}
-                  isSelectionMode={isSelectionMode && !isViewOnly}
-                  isSelected={selectedCards.includes(card.id)}
-                  onToggleSelect={handleToggleSelect}
-                  onShowArtSelector={handleShowArtSelector}
-                  isViewOnly={isViewOnly}
-                  currentUserId={user?.id}
-                  deckOwnerId={currentDeck?.user_id}
-                />
-              ))}
+              {deckCards.map((card) => {
+                console.log('[DEBUG] Renderizando card:', {
+                  cardId: card.id,
+                  is_transparent: card.is_transparent,
+                  typeof: typeof card.is_transparent
+                });
+                const transparent = card.is_transparent === true || card.is_transparent === 'true';
+                
+                // Long press manual
+                let pressTimer = null;
+                let lastTap = 0;
+                
+                const handleTouchStart = (e) => {
+                  // Cancelar timer anterior se existir
+                  if (pressTimer) clearTimeout(pressTimer);
+                  
+                  // Iniciar timer de long press (500ms)
+                  pressTimer = setTimeout(() => {
+                    console.log("⏱️ Long press detectado!", {
+                      isFriendTradeDeck,
+                      cardName: card.card_name,
+                      isViewOnly
+                    });
+                    if (isFriendTradeDeck) {
+                      console.log("🛒 Abrindo BuyRequestModal via long press");
+                      setSelectedCardForBuy(card);
+                      setShowBuyRequestModal(true);
+                    } else if (!isViewOnly) {
+                      // Se não é deck de amigo e não é viewOnly, abre modal de arte
+                      console.log("🎨 Abrindo ArtSelector via long press");
+                      handleShowArtSelector(card);
+                    }
+                  }, 500); // 500ms = meio segundo
+                };
+                
+                const handleTouchEnd = async (e) => {
+                  // Cancelar long press se soltar antes de 500ms
+                  if (pressTimer) {
+                    clearTimeout(pressTimer);
+                    pressTimer = null;
+                  }
+                  
+                  // Double tap detection (mantido para desktop)
+                  const now = Date.now();
+                  if (now - lastTap < 400) {
+                    if (isFriendTradeDeck) {
+                      setSelectedCardForBuy(card);
+                      setShowBuyRequestModal(true);
+                    } else if (isViewOnly && transparent) {
+                      setSelectedCardForTrade(card);
+                      setShowTradeDialog(true);
+                    } else if (!isViewOnly) {
+                      await doubleClickTransparency(card, deckCards);
+                    }
+                  }
+                  lastTap = now;
+                };
+                
+                const handleTouchCancel = () => {
+                  // Cancelar long press se o toque for cancelado
+                  if (pressTimer) {
+                    clearTimeout(pressTimer);
+                    pressTimer = null;
+                  }
+                };
+                
+                return (
+                  <div
+                    key={card.id}
+                    onDoubleClick={async () => {
+                      console.log("🖱️ Duplo clique detectado!", {
+                        isFriendTradeDeck,
+                        cardName: card.card_name,
+                        isViewOnly,
+                        transparent
+                      });
+                      if (isFriendTradeDeck) {
+                        console.log("🛒 Abrindo BuyRequestModal via double click");
+                        setSelectedCardForBuy(card);
+                        setShowBuyRequestModal(true);
+                      } else if (isViewOnly && transparent) {
+                        setSelectedCardForTrade(card);
+                        setShowTradeDialog(true);
+                      } else if (!isViewOnly) {
+                        await doubleClickTransparency(card, deckCards);
+                      }
+                    }}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchCancel={handleTouchCancel}
+                    style={{ opacity: transparent ? 0.5 : 1, transition: "opacity 0.3s" }}
+                  >
+                    <CardGridItem
+                      card={card}
+                      isSelectionMode={isSelectionMode && !isViewOnly}
+                      isSelected={selectedCards.includes(card.id)}
+                      onToggleSelect={handleToggleSelect}
+                      onShowArtSelector={handleShowArtSelector}
+                      isViewOnly={isViewOnly}
+                      currentUserId={user?.id}
+                      deckOwnerId={currentDeck?.user_id}
+                    />
+                  </div>
+                );
+              })}
             </AnimatePresence>
           </div>
         )}
@@ -512,7 +678,73 @@ const Deckbuilder = () => {
         onConfirm={handleConfirmDelete}
         isLoading={false}
       />
-    </div>
+    {/* Modal de trade para deck do amigo */}
+    {showTradeDialog && selectedCardForTrade && (
+      <TradeConfirmDialog
+        isOpen={showTradeDialog}
+        onClose={() => setShowTradeDialog(false)}
+        card={selectedCardForTrade}
+        onConfirm={async () => {
+            console.log('[TRADE DEBUG] user:', user);
+            console.log('[TRADE DEBUG] user.user_metadata:', user?.user_metadata);
+            console.log('[TRADE DEBUG] user.user_metadata.full_name:', user?.user_metadata?.full_name);
+          // Envia mensagem na caixa de mensagem ao oferecer trade (permite duplicados)
+          try {
+            const recipientId = currentDeck?.owner_id;
+            const messageText = `Oferta de trade: ${selectedCardForTrade.card_name}`;
+            const messageData = {
+              recipient_id: recipientId,
+              sender_id: user?.id,
+              card_id: selectedCardForTrade.id,
+              card_name: selectedCardForTrade.card_name,
+              type: 'trade_offer',
+              text: messageText,
+              created_at: new Date().toISOString()
+            };
+            const { messageOperations } = await import("../lib/supabaseOperations");
+            // Corrigir campo para 'content' ao invés de 'text' e adicionar nome do remetente
+            const messageDataFixed = { ...messageData };
+            if (messageDataFixed.text) {
+              messageDataFixed.content = messageDataFixed.text;
+              delete messageDataFixed.text;
+            }
+                // Buscar display_name do usuário logado na tabela users
+                let senderName = "";
+                try {
+                  const { userOperations } = await import("../lib/supabaseOperations");
+                  const userDb = await userOperations.getUser(user.id);
+                  senderName = userDb?.display_name || "";
+                  console.log('[TRADE DEBUG] display_name do usuário:', senderName);
+                } catch (err) {
+                  console.error('[TRADE DEBUG] Erro ao buscar display_name:', err);
+                }
+                if (!messageDataFixed.sender_name) {
+                  messageDataFixed.sender_name = senderName;
+                }
+            await messageOperations.sendMessage(messageDataFixed);
+            setShowTradeDialog(false);
+            setSelectedCardForTrade(null);
+            setError("Mensagem de trade enviada com sucesso!");
+          } catch (err) {
+            console.error('[TRADE] Erro ao enviar mensagem:', err);
+            setError("Erro ao enviar mensagem de trade: " + (err?.message || err));
+          }
+        }}
+      />
+    )}
+    
+    {/* Modal de interesse em comprar (deck Trade de amigo) */}
+    <BuyRequestModal
+      isOpen={showBuyRequestModal}
+      onClose={() => {
+        setShowBuyRequestModal(false);
+        setSelectedCardForBuy(null);
+      }}
+      card={selectedCardForBuy}
+      deckOwnerId={currentDeck?.owner_id}
+      deckOwnerName={deckOwnerName || "Amigo"}
+    />
+  </div>
   );
 };
 

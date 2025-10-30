@@ -17,7 +17,7 @@ import { ArrowLeftRight } from "lucide-react";
 export default function TradeConfirmDialog({ isOpen, onClose, card, onConfirm }) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-gray-900 border-gray-800 text-white max-w-md">
+  <DialogContent className="bg-gray-900 border-gray-800 text-white w-[95vw] max-w-[400px] px-5 py-5 rounded-xl m-auto" style={{ borderRadius: 18, boxShadow: '0 4px 24px rgba(0,0,0,0.4)', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' }}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <ArrowLeftRight className="w-5 h-5 text-purple-500" />

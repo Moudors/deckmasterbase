@@ -15,7 +15,7 @@ function CreateDeck() {
   const navigate = useNavigate();
   const location = useLocation();
   const [user] = useAuthState();
-  const { createDeck } = useUnifiedDecks();
+  const { createDeck, decks } = useUnifiedDecks();
   const [deckName, setDeckName] = useState("");
   const [format, setFormat] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -43,6 +43,22 @@ function CreateDeck() {
 
     setIsCreating(true);
     try {
+      // 🔒 Verificação simples para formatos especiais
+      if (format === "Coleção de cartas" || format === "Trades") {
+        const existingDeck = decks?.find(deck => 
+          deck.format === format && deck.user_id === user.id
+        );
+        
+        if (existingDeck) {
+          const message = format === "Coleção de cartas" 
+            ? "Coleção já criada" 
+            : "Trades já criado";
+          
+          navigate("/", { state: { message, type: "warning" } });
+          return;
+        }
+      }
+
       console.log("🆕 Criando deck:", { name: deckName, format });
       const startTime = performance.now();
       
@@ -158,11 +174,18 @@ function CreateDeck() {
         {/* Formato */}
         <div className="flex flex-col gap-2">
           <label className="text-sm text-gray-300">Formato</label>
-          <Select value={format} onValueChange={setFormat}>
+          <Select 
+            value={format} 
+            onValueChange={(value) => {
+              console.log("🎯 Formato selecionado:", value);
+              setFormat(value);
+            }}
+            onOpenChange={(open) => console.log("📂 Menu aberto:", open)}
+          >
             <SelectTrigger className="w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-orange-500 focus:outline-none">
               <SelectValue placeholder="Selecione o formato" />
             </SelectTrigger>
-            <SelectContent className="bg-gray-800 text-white border border-gray-700">
+            <SelectContent className="bg-gray-800 text-white border border-gray-700 max-h-[300px] overflow-y-auto">
               <SelectItem value="Commander">Commander</SelectItem>
               <SelectItem value="Commander 300">Commander 300</SelectItem>
               <SelectItem value="Commander 500">Commander 500</SelectItem>
@@ -171,6 +194,8 @@ function CreateDeck() {
               <SelectItem value="Pioneer">Pioneer</SelectItem>
               <SelectItem value="Pauper">Pauper</SelectItem>
               <SelectItem value="Legacy">Legacy</SelectItem>
+              <SelectItem value="Coleção de cartas">🎴 Coleção de cartas</SelectItem>
+              <SelectItem value="Trades">🔄 Trades</SelectItem>
             </SelectContent>
           </Select>
         </div>

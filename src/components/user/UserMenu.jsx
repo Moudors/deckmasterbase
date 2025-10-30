@@ -27,7 +27,7 @@ import MessagesPanel from "./MessagesPanel";
 import FriendsList from "./FriendsList";
 import ProfileEdit from "./ProfileEdit";
 
-import { auth } from "@/supabase";
+import { signOut } from "@/authSupabase";
 import { userOperations, messageOperations } from "@/lib/supabaseOperations";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -74,11 +74,11 @@ export default function UserMenu() {
   console.log('🔍 UserMenu - display_name:', user?.display_name);
   console.log('🔍 UserMenu - email:', user?.email);
 
-  // ✅ All Users - Cacheia por 30 minutos (economia de N leituras por abertura)
-  const { data: allUsers = [] } = useQuery({
-    queryKey: ["allUsers"],
+  // Buscar usernames da tabela 'usernames'
+  const { data: allUsernames = [] } = useQuery({
+    queryKey: ["allUsernames"],
     queryFn: async () => {
-      return await userOperations.getAllUsers();
+      return await userOperations.getAllUsernames();
     },
     staleTime: 30 * 60 * 1000, // Cache 30 minutos
     gcTime: 60 * 60 * 1000, // Garbage collect após 1 hora
@@ -108,6 +108,8 @@ export default function UserMenu() {
   };
 
   const handleAddFriend = async () => {
+  console.log('[DEBUG] allUsernames:', JSON.stringify(allUsernames, null, 2));
+  console.log('[DEBUG] searchInput:', friendId.trim());
     setError(null);
     setSuccess(null);
     const searchInput = friendId.trim();
@@ -117,34 +119,34 @@ export default function UserMenu() {
     }
 
     try {
+      console.log('[DEBUG] Tentando encontrar usuário:', {
+        id: friendId.trim(),
+        username: friendId.trim().toLowerCase()
+      });
       const searchLower = searchInput.toLowerCase();
-      const friendUser = allUsers.find(
-        (u) =>
-          u.id === searchInput ||
-          u.uuid === searchInput ||
-          (u.username && u.username.toLowerCase() === searchLower)
-      );
+      const friendUsername = allUsernames.find((u) => u.id.toLowerCase() === searchLower);
+      console.log('[DEBUG] Resultado friendUsername:', friendUsername);
 
-      if (!friendUser) {
+      if (!friendUsername) {
         setError(`Usuário não encontrado: "${searchInput}"`);
         return;
       }
 
-      if (friendUser.id === user.id) {
+      if (friendUsername.uid === user.id) {
         setError("Você não pode adicionar a si mesmo");
         return;
       }
 
-      if (user.friends?.includes(friendUser.id)) {
+      if (user.friends?.includes(friendUsername.uid)) {
         setError("Este usuário já está na sua lista de amigos");
         return;
       }
 
-      await messageOperations.createMessage({
-        recipient_id: friendUser.id,
+      await messageOperations.sendMessage({
+        recipient_id: friendUsername.uid,
         sender_id: user.id,
         sender_name: user.display_name || user.full_name || user.email,
-        message: `${user.display_name || user.full_name || user.email} quer adicionar você como amigo.`,
+        content: `${user.display_name || user.full_name || user.email} quer adicionar você como amigo.`,
         type: "friend_request",
         status: "pending",
         created_at: new Date().toISOString(),
@@ -360,12 +362,12 @@ export default function UserMenu() {
               </Alert>
             )}
 
-            <FriendsList userId={user?.id} />
+            <FriendsList user={user} />
           </TabsContent>
 
           {/* Mensagens */}
           <TabsContent value="messages" className="pt-4">
-            <MessagesPanel userId={user?.id} />
+            <MessagesPanel user={user} />
           </TabsContent>
         </Tabs>
 
@@ -377,15 +379,13 @@ export default function UserMenu() {
           onClick={async () => {
             try {
               console.log('🚪 Usuário clicou em logout...');
-              console.log('🔍 auth.currentUser antes do logout:', auth.currentUser);
               
               // Limpar todos os caches
               queryClient.clear();
               console.log('🧹 Cache limpo');
               
-              const logoutResult = await auth.signOut();
-              console.log('✅ Logout concluído:', logoutResult);
-              console.log('🔍 auth.currentUser após logout:', auth.currentUser);
+              await signOut();
+              console.log('✅ Logout concluído');
               
               // Aguardar um pouco para garantir que o estado seja atualizado
               setTimeout(() => {

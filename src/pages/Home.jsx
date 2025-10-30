@@ -1,6 +1,6 @@
 // src/pages/Home.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDecks } from "@/lib/useUnifiedDecks";
 import { useConnectivity } from "@/lib/connectivityManager";
@@ -19,6 +19,7 @@ import AdvancedSearchPage from "@/components/advanced-search/AdvancedSearchPage"
 
 function Home() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user] = useAuthState();
   const { profile, loading: profileLoading, error: profileError } = useUserProfile(user);
   const connectivity = useConnectivity();
@@ -50,6 +51,7 @@ function Home() {
   const [newFormat, setNewFormat] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [warningMessage, setWarningMessage] = useState(null);
   
   // Estados para busca (cartas e capa)
   const [searchOptionsOpen, setSearchOptionsOpen] = useState(false);
@@ -71,6 +73,22 @@ function Home() {
     }
   }, [debouncedCoverSearchTerm, coverSearchOpen]);
 
+  // Efeito para exibir mensagens de navegação (ex: duplicata de formatos especiais)
+  useEffect(() => {
+    if (location.state?.message) {
+      setWarningMessage(location.state.message);
+      // Limpar o estado da navegação para não mostrar novamente ao recarregar
+      window.history.replaceState({}, document.title);
+      
+      // Auto-limpar mensagem após 5 segundos
+      const timer = setTimeout(() => {
+        setWarningMessage(null);
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
+
   // Computadas
   const hasDecks = decks && decks.length > 0;
   const isOfflineMode = !connectivity.canSaveData;
@@ -79,7 +97,10 @@ function Home() {
   console.log("🏠 HOME DEBUG:", {
     isLoading,
     decksError,
-    decks: decks ? { length: decks.length, items: decks.map(d => ({ id: d.id, name: d.name })) } : null,
+    decks: decks ? { 
+      length: decks.length, 
+      items: decks.map(d => ({ id: d.id, name: d.name, format: d.format, cover: d.cover_image_url })) 
+    } : null,
     hasDecks,
     user: user ? { id: user.id, email: user.email } : null
   });
@@ -405,6 +426,18 @@ function Home() {
           </div>
         )}
 
+        {/* Alertas de aviso (ex: duplicata de formato especial) */}
+        {warningMessage && (
+          <div className="mb-4 w-full max-w-md">
+            <Alert className="bg-yellow-900/20 border-yellow-800">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-yellow-400">
+                {warningMessage}
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         <h1 className="mb-6 text-3xl font-bold">Meus Decks</h1>
 
 
@@ -437,7 +470,22 @@ function Home() {
               <div
                 key={deck.id}
                 className="relative cursor-pointer overflow-hidden rounded-xl shadow-lg min-h-[240px] flex-shrink-0"
-                onClick={() => navigate(`/deckbuilder/${deck.id}`)}
+                onClick={() => {
+                  console.log("🎯 Clicou no deck:", { name: deck.name, format: deck.format });
+                  
+                  // Se for Coleção de cartas, redireciona para /collection
+                  if (deck.format === "Coleção de cartas") {
+                    console.log("➡️ Redirecionando para /collection");
+                    navigate("/collection");
+                  } else if (deck.format === "Trade" || deck.format === "Trades") {
+                    // Se for Trade ou Trades, redireciona para /trade
+                    console.log("➡️ Redirecionando para /trade");
+                    navigate("/trade");
+                  } else {
+                    console.log("➡️ Redirecionando para /deckbuilder");
+                    navigate(`/deckbuilder/${deck.id}`);
+                  }
+                }}
               >
                 <div
                   className="h-56 w-full bg-cover bg-center"

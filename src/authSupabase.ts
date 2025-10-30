@@ -66,11 +66,11 @@ export async function signInWithGoogle() {
   
   let redirectTo;
   if (isLocalhost) {
-    // Para desenvolvimento local
-    redirectTo = 'http://localhost:3000/';
+    // Para desenvolvimento local - sempre redireciona para a raiz
+    redirectTo = `${window.location.protocol}//${window.location.host}/`;
   } else {
-    // Para produção, usa variável de ambiente ou fallback
-    redirectTo = process.env.REACT_APP_SUPABASE_OAUTH_REDIRECT || 'https://deckmasterbase.vercel.app/';
+    // Para produção, usa variável de ambiente ou URL atual
+    redirectTo = process.env.REACT_APP_SUPABASE_OAUTH_REDIRECT || `${window.location.protocol}//${window.location.host}/`;
   }
 
   console.log('🔄 Login com Google, redirect para:', redirectTo);
@@ -82,8 +82,13 @@ export async function signInWithGoogle() {
     }
   });
 
-  if (error) throw error;
+  if (error) {
+    console.error('❌ Erro ao iniciar OAuth com Google:', error);
+    throw error;
+  }
 
+  console.log('✅ OAuth iniciado com sucesso');
+  
   // O usuário será criado automaticamente quando o callback do OAuth for processado
   // através do listener onAuthStateChange no supabase.ts
   return data;

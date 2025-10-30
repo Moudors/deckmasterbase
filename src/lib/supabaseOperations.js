@@ -4,6 +4,30 @@ import { supabase } from '../supabase';
 // ==================== USERS ====================
 
 export const userOperations = {
+  // Buscar todos os usernames
+  async getAllUsernames() {
+    const { data, error } = await supabase
+      .from('usernames')
+      .select('*');
+    if (error) {
+      console.error('[DEBUG] Erro ao buscar todos os usernames:', error);
+    } else {
+      console.log('[DEBUG] Resultado getAllUsernames:', JSON.stringify(data, null, 2));
+    }
+    return data || [];
+  },
+  // Buscar todos os usuários
+  async getAllUsers() {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*');
+    if (error) {
+      console.error('[DEBUG] Erro ao buscar todos os usuários:', error);
+    } else {
+      console.log('[DEBUG] Resultado getAllUsers:', JSON.stringify(data, null, 2));
+    }
+    return data || [];
+  },
   // Buscar usuário por ID
   async getUser(id) {
     const { data, error } = await supabase
@@ -118,10 +142,9 @@ export const deckCardOperations = {
   async getDeckCards(deckId) {
     const { data, error } = await supabase
       .from('deck_cards')
-      .select('*')
+      .select('id, deck_id, card_name, quantity, acquired, image_url, mana_cost, type_line, oracle_text, created_at, updated_at, card_faces, colors, color_identity, cmc, rarity, set_code, collector_number, scryfall_id, is_transparent')
       .eq('deck_id', deckId)
       .order('created_at', { ascending: true });
-    
     if (error) throw error;
     return data || [];
   },
@@ -152,17 +175,15 @@ export const deckCardOperations = {
 
   // Atualizar carta no deck
   async updateDeckCard(cardId, updates) {
+    console.log('[DEBUG] updateDeckCard - Enviando updates:', updates);
     const { data, error } = await supabase
       .from('deck_cards')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString()
-      })
+      .update(updates)
       .eq('id', cardId)
-      .select()
+      .select('*')
       .single();
-    
     if (error) throw error;
+    console.log('[DEBUG] updateDeckCard - Retorno do Supabase:', data);
     return data;
   },
 
@@ -210,6 +231,18 @@ export const messageOperations = {
       .select()
       .single();
     
+    if (error) throw error;
+    return data;
+  },
+
+  // Atualizar mensagem
+  async updateMessage(messageId, updates) {
+    const { data, error } = await supabase
+      .from('messages')
+      .update(updates)
+      .eq('id', messageId)
+      .select()
+      .single();
     if (error) throw error;
     return data;
   },

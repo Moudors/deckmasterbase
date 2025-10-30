@@ -1,8 +1,7 @@
 // src/pages/FriendDecks.jsx
 import React from "react";
-import { db } from "../firebase"; // ✅ corrigido
+import { supabase } from "@/supabase";
 import { useQuery } from "@tanstack/react-query";
-import { collection, getDocs, query, where, orderBy } from "@/firebase";
 import { Button } from "../components/ui/button";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
@@ -20,13 +19,18 @@ export default function FriendDecks() {
     queryKey: ["friend-decks", friendId],
     queryFn: async () => {
       if (!friendId) return [];
-      const q = query(
-        collection(db, "decks"),
-        where("created_by", "==", friendId),
-        orderBy("created_at", "desc")
-      );
-      const snap = await getDocs(q);
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const { data, error } = await supabase
+        .from("decks")
+        .select("*")
+        .eq("owner_id", friendId)
+        .order("created_at", { ascending: false });
+      console.log('[DEBUG] FriendDecks - friendId:', friendId);
+      console.log('[DEBUG] FriendDecks - decks data:', data);
+      if (error) {
+        console.error("Erro ao buscar decks do amigo:", error);
+        return [];
+      }
+      return data || [];
     },
     enabled: !!friendId,
   });

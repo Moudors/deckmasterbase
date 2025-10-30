@@ -33,8 +33,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Função para criar documento do usuário automaticamente
 async function createUserDocumentFromAuth(user: any) {
-  if (!user?.id) {
-    console.error('❌ createUserDocumentFromAuth: user.id não fornecido:', user);
+  console.log('🔎 [createUserDocumentFromAuth] Usuário recebido:', user);
+  // Tenta encontrar o campo correto para o id
+  const userId = user?.id || user?.uuid || user?.user?.id;
+  if (!userId) {
+    console.error('❌ createUserDocumentFromAuth: Nenhum campo de id encontrado no objeto user:', user);
     return;
   }
 
@@ -42,8 +45,8 @@ async function createUserDocumentFromAuth(user: any) {
     // Buscar se o usuário já existe
     const { data: existingUser, error: fetchError } = await supabase
       .from('users')
-      .select('id')
-      .eq('id', user.id)
+      .select('uuid')
+      .eq('uuid', userId)
       .single();
 
     if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = not found
@@ -58,9 +61,11 @@ async function createUserDocumentFromAuth(user: any) {
 
     // Criar novo documento do usuário
     const userData = {
-      id: user.id,
+  id: userId, // Chave primária
+  uuid: userId, // Compatibilidade
       email: user.email,
-      username: user.user_metadata?.full_name || user.user_metadata?.display_name || user.email?.split('@')[0] || 'Usuário',
+      display_name: user.user_metadata?.full_name || user.user_metadata?.display_name || user.email?.split('@')[0] || 'Usuário',
+      username: user.user_metadata?.username || user.user_metadata?.full_name || user.user_metadata?.display_name || user.email?.split('@')[0] || 'Usuário',
       avatar_url: user.user_metadata?.avatar_url || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
