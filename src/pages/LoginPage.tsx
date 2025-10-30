@@ -21,6 +21,14 @@ const LoginPage: React.FC = () => {
     if (accessToken) {
       console.log('🔄 OAuth callback detectado em LoginPage');
       setIsProcessingOAuth(true);
+      
+      // Timeout de segurança para evitar loading infinito
+      const timeout = setTimeout(() => {
+        console.log('⏱️ Timeout de OAuth - desativando loading');
+        setIsProcessingOAuth(false);
+      }, 5000); // 5 segundos
+      
+      return () => clearTimeout(timeout);
     }
   }, []);
 
@@ -28,6 +36,8 @@ const LoginPage: React.FC = () => {
   useEffect(() => {
     if (user && !loading) {
       console.log('✅ Usuário já logado, redirecionando para home...', user?.email);
+      // Desativa o loading do OAuth antes de redirecionar
+      setIsProcessingOAuth(false);
       navigate("/", { replace: true }); // ✅ Replace para evitar loop
     }
   }, [user, loading, navigate]);

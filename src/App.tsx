@@ -92,17 +92,20 @@ function App() {
     const type = hashParams.get('type');
     
     if (accessToken || type === 'recovery') {
-      console.log('🔄 Callback OAuth detectado, processando tokens...', { type });
-      // O supabase já está processando automaticamente através do onAuthStateChange
-      // Aguardar um pouco para o estado ser atualizado e então redirecionar
-      setTimeout(() => {
-        console.log('✅ Redirecionando para home após OAuth...');
-        // Limpar hash da URL
+      console.log('🔄 Callback OAuth detectado, processando tokens...', { 
+        type, 
+        hasUser: !!user, 
+        loading 
+      });
+      
+      // Se o usuário já está autenticado, redireciona imediatamente
+      if (user && !loading) {
+        console.log('✅ Usuário autenticado, redirecionando para home...');
         window.history.replaceState(null, '', window.location.pathname);
         navigate('/', { replace: true });
-      }, 1500);
+      }
     }
-  }, [navigate]);
+  }, [navigate, user, loading]);
 
   return (
     <>

@@ -66,11 +66,11 @@ export async function signInWithGoogle() {
   
   let redirectTo;
   if (isLocalhost) {
-    // Para desenvolvimento local - sempre redireciona para a raiz
+    // Para desenvolvimento local
     redirectTo = `${window.location.protocol}//${window.location.host}/`;
   } else {
-    // Para produção, usa variável de ambiente ou URL atual
-    redirectTo = process.env.REACT_APP_SUPABASE_OAUTH_REDIRECT || `${window.location.protocol}//${window.location.host}/`;
+    // Para produção (Vercel), sempre usa a raiz
+    redirectTo = `${window.location.protocol}//${window.location.host}/`;
   }
 
   console.log('🔄 Login com Google, redirect para:', redirectTo);
@@ -78,7 +78,9 @@ export async function signInWithGoogle() {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: redirectTo
+      redirectTo: redirectTo,
+      // Força redirecionamento para a URL especificada
+      skipBrowserRedirect: false
     }
   });
 
