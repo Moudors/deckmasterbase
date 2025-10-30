@@ -61,39 +61,37 @@ export async function signIn(email: string, password: string) {
 
 // Login com Google
 export async function signInWithGoogle() {
-  // Determina a URL de redirect baseada no ambiente
-  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  
-  let redirectTo;
-  if (isLocalhost) {
-    // Para desenvolvimento local
-    redirectTo = `${window.location.protocol}//${window.location.host}/`;
-  } else {
-    // Para produção (Vercel), sempre usa a raiz
-    redirectTo = `${window.location.protocol}//${window.location.host}/`;
-  }
+  try {
+    const redirectTo = `${window.location.origin}/`;
 
-  console.log('🔄 Login com Google, redirect para:', redirectTo);
+    console.log('=== INICIANDO GOOGLE OAUTH ===');
+    console.log('Redirect URL:', redirectTo);
+    console.log('Origin:', window.location.origin);
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: redirectTo,
-      // Força redirecionamento para a URL especificada
-      skipBrowserRedirect: false
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectTo,
+      }
+    });
+
+    if (error) {
+      console.error('=== ERRO OAUTH ===');
+      console.error('Error:', error);
+      console.error('Message:', error.message);
+      throw error;
     }
-  });
 
-  if (error) {
-    console.error('❌ Erro ao iniciar OAuth com Google:', error);
-    throw error;
+    console.log('=== OAUTH SUCESSO ===');
+    console.log('Data:', data);
+    console.log('URL:', data.url);
+    
+    return data;
+  } catch (err) {
+    console.error('=== EXCEPTION ===');
+    console.error(err);
+    throw err;
   }
-
-  console.log('✅ OAuth iniciado com sucesso');
-  
-  // O usuário será criado automaticamente quando o callback do OAuth for processado
-  // através do listener onAuthStateChange no supabase.ts
-  return data;
 }
 
 // Logout
