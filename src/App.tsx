@@ -86,18 +86,21 @@ function App() {
 
   // ✅ Detecta callback do OAuth e redireciona para home
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const accessToken = urlParams.get('access_token');
-    const refreshToken = urlParams.get('refresh_token');
+    // Supabase usa hash fragments (#) ao invés de query params (?)
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = hashParams.get('access_token');
+    const type = hashParams.get('type');
     
-    if (accessToken) {
-      console.log('🔄 Callback OAuth detectado, processando tokens...');
+    if (accessToken || type === 'recovery') {
+      console.log('🔄 Callback OAuth detectado, processando tokens...', { type });
       // O supabase já está processando automaticamente através do onAuthStateChange
       // Aguardar um pouco para o estado ser atualizado e então redirecionar
       setTimeout(() => {
         console.log('✅ Redirecionando para home após OAuth...');
+        // Limpar hash da URL
+        window.history.replaceState(null, '', window.location.pathname);
         navigate('/', { replace: true });
-      }, 1000);
+      }, 1500);
     }
   }, [navigate]);
 

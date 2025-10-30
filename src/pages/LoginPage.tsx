@@ -12,6 +12,17 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+  const [isProcessingOAuth, setIsProcessingOAuth] = useState(false);
+
+  // Detecta callback OAuth
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = hashParams.get('access_token');
+    if (accessToken) {
+      console.log('🔄 OAuth callback detectado em LoginPage');
+      setIsProcessingOAuth(true);
+    }
+  }, []);
 
   // Redireciona automaticamente se já estiver logado
   useEffect(() => {
@@ -22,7 +33,7 @@ const LoginPage: React.FC = () => {
   }, [user, loading, navigate]);
 
   // Mostra loading enquanto processa callback OAuth
-  if (loading) {
+  if (loading || isProcessingOAuth) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
         <div className="text-center">
