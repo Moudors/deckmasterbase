@@ -58,31 +58,17 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 function App() {
-  console.log('🚀 App inicializando...');
-  
   const [user, loading] = useAuthState();
   const navigate = useNavigate();
 
-  console.log('👤 App - user:', user ? user.email : 'sem usuário', 'loading:', loading);
-
   useEffect(() => {
-    console.log('🔧 Inicializando appInitializer...');
     try {
       // 🚀 Inicializa sistema offline-first
       appInitializer.initialize();
-      console.log('✅ appInitializer inicializado');
     } catch (error) {
       console.error('❌ Erro no appInitializer:', error);
     }
   }, []);
-
-  useEffect(() => {
-    if (user && !loading) {
-      console.log('✅ Usuário logado:', user.email);
-      // ✅ Perfil do usuário é criado automaticamente no supabase.ts
-      // quando o onAuthStateChanged é disparado
-    }
-  }, [user, loading]);
 
   // ✅ Detecta callback do OAuth e redireciona para home
   useEffect(() => {
@@ -92,15 +78,8 @@ function App() {
     const type = hashParams.get('type');
     
     if (accessToken || type === 'recovery') {
-      console.log('🔄 Callback OAuth detectado, processando tokens...', { 
-        type, 
-        hasUser: !!user, 
-        loading 
-      });
-      
       // Se o usuário já está autenticado, redireciona imediatamente
       if (user && !loading) {
-        console.log('✅ Usuário autenticado, redirecionando para home...');
         window.history.replaceState(null, '', window.location.pathname);
         navigate('/', { replace: true });
       }

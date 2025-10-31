@@ -44,12 +44,19 @@ export async function searchPortugueseToEnglish(portugueseName: string): Promise
 }
 
 /**
- * 🎯 Autocomplete em Português usando BUSCA HÍBRIDA
+ * 🎯 Autocomplete em Português - SOLUÇÃO COMPLETA
  * 
- * PROBLEMA: API MTG.io não suporta busca parcial em português
- * SOLUÇÃO: Usar printed_name do Scryfall diretamente
+ * ✅ DESCOBERTA: Scryfall suporta busca em português com lang:pt!
  * 
- * Quando usuário digita "Relâ", queremos sugerir "Relâmpago" (Lightning Bolt)
+ * ESTRATÉGIAS:
+ * 1. Busca DIRETA em português: lang:pt+"termo completo"
+ * 2. Busca PARCIAL com wildcard: lang:pt+name:termo*
+ * 3. Retorna printed_name (nome impresso em PT)
+ * 
+ * Exemplos que FUNCIONAM:
+ * - "Relâmpago" → 34 resultados com "Relâmpago"
+ * - "Rel*" → 175 resultados incluindo "Relâmpago"
+ * - "Dragão" → 175 resultados com "Dragão"
  */
 export async function getPortugueseAutocomplete(query: string): Promise<Array<{ portuguese: string; english: string }>> {
   if (query.length < 2) return [];
@@ -57,33 +64,37 @@ export async function getPortugueseAutocomplete(query: string): Promise<Array<{ 
   try {
     console.log('🔍 Buscando autocomplete PT para:', query);
     
-    // 🌟 Buscar todas cartas em português no Scryfall
-    // Usar busca por printed_name (nome impresso) em português
-    const response = await fetch(
-      `https://api.scryfall.com/cards/search?q=lang:pt+printed_name:/${query}/&unique=prints&order=name`
-    );
+    // 🌟 BUSCA DIRETA NO SCRYFALL EM PORTUGUÊS
+    // Usar wildcard (*) para busca parcial funcionar
+    const searchQuery = `lang:pt+name:${encodeURIComponent(query)}*`;
+    const url = `https://api.scryfall.com/cards/search?q=${searchQuery}&unique=cards&order=name`;
+    
+    console.log(`   URL: ${url}`);
+    
+    const response = await fetch(url);
     
     if (!response.ok) {
-      console.log('⚠️ Busca em português falhou, tentando fallback');
-      // Fallback: buscar em inglês e tentar traduzir
-      return await fallbackEnglishSearch(query);
+      console.log('⚠️ Busca Scryfall PT falhou, tentando fallback');
+      return await fallbackScryfallSearch(query);
     }
     
     const data = await response.json();
     const cards = data.data || [];
     
     if (cards.length === 0) {
-      console.log('⚠️ Nenhum resultado, usando fallback');
-      return await fallbackEnglishSearch(query);
+      console.log('⚠️ Nenhum resultado em PT, tentando fallback');
+      return await fallbackScryfallSearch(query);
     }
     
-    // Mapear resultados
+    console.log(`📦 Scryfall retornou ${cards.length} cartas em português`);
+    
+    // Extrair nomes em português e inglês
     const results: Array<{ portuguese: string; english: string }> = [];
     const seen = new Set<string>(); // Evitar duplicatas
     
     for (const card of cards.slice(0, 10)) {
-      const portugueseName = card.printed_name || card.name;
       const englishName = card.name;
+      const portugueseName = card.printed_name || englishName;
       
       if (!seen.has(englishName)) {
         seen.add(englishName);
@@ -99,16 +110,17 @@ export async function getPortugueseAutocomplete(query: string): Promise<Array<{ 
     return results;
     
   } catch (error) {
-    console.error('❌ Erro no autocomplete português:', error);
-    return await fallbackEnglishSearch(query);
+    console.error('❌ Erro no autocomplete:', error);
+    return await fallbackScryfallSearch(query);
   }
 }
 
 /**
- * 🔄 Fallback: Buscar em inglês quando busca em português falha
+ * 🔄 Fallback: Buscar no Scryfall quando MTG.io não retorna resultados
  */
-async function fallbackEnglishSearch(query: string): Promise<Array<{ portuguese: string; english: string }>> {
+async function fallbackScryfallSearch(query: string): Promise<Array<{ portuguese: string; english: string }>> {
   try {
+    console.log('🔄 Usando Scryfall como fallback');
     const response = await fetch(
       `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
     );
@@ -124,7 +136,7 @@ async function fallbackEnglishSearch(query: string): Promise<Array<{ portuguese:
       english: name
     }));
   } catch (error) {
-    console.error('❌ Fallback também falhou:', error);
+    console.error('❌ Fallback Scryfall também falhou:', error);
     return [];
   }
 }

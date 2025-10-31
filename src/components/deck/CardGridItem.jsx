@@ -22,22 +22,12 @@ function CardGridItem({
   onToggleSelect,
   onDoubleClick, // Para abrir modal de trade
   hasGreenBorder = false, // Indica que amigos querem essa carta
+  hasReverseMatch = false, // 🔵 Indica que amigo tem carta que marquei como wanted
+  onReverseMatchClick, // 🔵 Handler para clique na bolinha azul
   onLongPress // Custom long press handler (para deck de amigo)
 }) {
   const [isTransparent, setIsTransparent] = useState(false);
   const [showZoom, setShowZoom] = useState(false);
-  
-  // 🔍 DEBUG: Verificar se está recebendo hasGreenBorder
-  useEffect(() => {
-    if (hasGreenBorder) {
-      console.log("🟢 CardGridItem - CARTA COM GREEN BORDER:", {
-        cardName: card.card_name,
-        scryfallId: card.scryfall_id,
-        hasGreenBorder,
-        isSelectionMode
-      });
-    }
-  }, [hasGreenBorder, card.card_name, card.scryfall_id, isSelectionMode]);
   
   // Usar um estado persistente para currentFaceIndex baseado no ID da carta
   const cardKey = `${card.id}-${card.scryfall_id}`;
@@ -58,10 +48,8 @@ function CardGridItem({
     if (isViewOnly || isSelectionMode) return;
     
     longPressTriggered.current = false;
-    console.log('[DEBUG] Long press iniciado', { hasCustomHandler: !!onLongPress });
     
     longPressTimer.current = setTimeout(() => {
-      console.log('[DEBUG] Long press detectado', { hasCustomHandler: !!onLongPress });
       longPressTriggered.current = true;
       
       // Se tem handler customizado (deck de amigo), usa ele
@@ -71,7 +59,7 @@ function CardGridItem({
         // Senão, abre o seletor de arte (comportamento padrão)
         onShowArtSelector?.(card);
       }
-    }, 500); // 500ms
+    }, 800); // 800ms para evitar conflito com duplo clique
   };
 
   const handlePressEnd = (e) => {
@@ -81,7 +69,6 @@ function CardGridItem({
     }
     
     if (longPressTriggered.current) {
-      console.log('[DEBUG] Long press completado');
       e.preventDefault();
       e.stopPropagation();
     }
@@ -89,7 +76,6 @@ function CardGridItem({
 
   const handlePressCancel = () => {
     if (longPressTimer.current) {
-      console.log('[DEBUG] Long press cancelado');
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
@@ -109,18 +95,7 @@ function CardGridItem({
   const hasMultipleFaces = card.card_faces && card.card_faces.length > 1;
   const currentFace = hasMultipleFaces ? card.card_faces[currentFaceIndex] : card;
   
-  // DEBUG COMPLETO
-  if (hasMultipleFaces) {
-    console.log("� DEBUG FACES COMPLETO:", {
-      cardName: card.card_name,
-      currentFaceIndex,
-      allFaces: card.card_faces,
-      currentFace: currentFace,
-      cardImageUrl: card.image_url
-    });
-  }
-  
-  // �🖼️ Lógica de URL de imagem para diferentes tipos de cartas dupla face
+  // 🖼️ Lógica de URL de imagem para diferentes tipos de cartas dupla face
   let displayImageUrl;
   
   if (hasMultipleFaces) {
@@ -178,32 +153,12 @@ function CardGridItem({
   };
 
   // 🔄 Alternar face da carta dupla face
-  // Alterna a face da carta dupla face
   const toggleFace = () => {
-    console.log("🔄 toggleFace chamado", { 
-      hasMultipleFaces, 
-      currentFaceIndex, 
-      totalFaces: card.card_faces?.length,
-      cardName: card.card_name 
-    });
     if (hasMultipleFaces) {
       const newIndex = (currentFaceIndex + 1) % card.card_faces.length;
-      console.log("🔄 Mudando para face:", newIndex);
       setCurrentFaceIndex(newIndex);
     }
   };
-
-  // 🔄 Clique longo: abre direto o seletor de arte
-  // (Removido: duplicata de bindLongPress)
-
-  // 🔍 DEBUG DIRETO NO RENDER
-  console.log("🔍 CardGridItem RENDER:", {
-    cardName: card.card_name,
-    hasGreenBorder,
-    willRenderGreenCircle: hasGreenBorder === true,
-    hasGreenBorderType: typeof hasGreenBorder,
-    hasGreenBorderValue: JSON.stringify(hasGreenBorder)
-  });
 
   return (
     <>
@@ -242,6 +197,27 @@ function CardGridItem({
             title="Clique para ver quem quer essa carta"
           >
             <span className="sr-only">Amigos querem essa carta</span>
+          </button>
+        )}
+
+        {/* 🔵 Bolinha azul - indica que amigo tem carta que eu marquei como wanted */}
+        {hasReverseMatch && !isSelectionMode && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onReverseMatchClick?.();
+            }}
+            aria-label="Ver quem tem essa carta"
+            className="absolute top-1 left-1 z-50 w-6 h-6 rounded-full bg-blue-500 bg-opacity-80 border-2 border-white shadow-lg hover:bg-blue-600 hover:bg-opacity-90 hover:scale-110 active:scale-95 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
+            style={{ 
+              boxShadow: '0 0 0 2px white, 0 0 10px rgba(59, 130, 246, 0.5)',
+              pointerEvents: 'auto'
+            }}
+            title="Clique para solicitar essa carta"
+          >
+            <span className="sr-only">Amigo tem essa carta disponível</span>
           </button>
         )}
 
@@ -295,7 +271,6 @@ function CardGridItem({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log("🔘 Botão de face clicado!");
               toggleFace();
             }}
             className="absolute top-2 right-2 w-7 h-7 bg-orange-500/90 hover:bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-10"
@@ -344,6 +319,7 @@ export default memo(CardGridItem, (prevProps, nextProps) => {
     JSON.stringify(prevProps.card.card_faces) === JSON.stringify(nextProps.card.card_faces) &&
     prevProps.isSelected === nextProps.isSelected &&
     prevProps.isSelectionMode === nextProps.isSelectionMode &&
-    prevProps.hasGreenBorder === nextProps.hasGreenBorder // ✅ CRÍTICO: Verifica green border!
+    prevProps.hasGreenBorder === nextProps.hasGreenBorder && // ✅ Verifica green border (amigos querem)
+    prevProps.hasReverseMatch === nextProps.hasReverseMatch // 🔵 Verifica blue border (amigos têm)
   );
 });

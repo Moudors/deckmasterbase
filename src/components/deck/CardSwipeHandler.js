@@ -22,9 +22,9 @@ export function useCardSwipe({ onSwipeRight, onDoubleTap }) {
       return;
     }
 
-    // Detectar duplo toque
+    // Detectar duplo toque (aumentado para 400ms para evitar conflito com long press)
     const now = Date.now();
-    if (now - lastTap < 300) {
+    if (now - lastTap < 400) {
       onDoubleTap && onDoubleTap();
     }
     lastTap = now;

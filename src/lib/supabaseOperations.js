@@ -78,6 +78,7 @@ export const deckOperations = {
       .from('decks')
       .select('*')
       .eq('owner_id', userId)
+      .order('display_order', { ascending: true })
       .order('created_at', { ascending: false });
     
     if (error) throw error;

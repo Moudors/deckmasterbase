@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Eye, Trash2 } from "lucide-react";
+import { X, Eye, Trash2, Settings } from "lucide-react";
 import { useAuthState } from "../hooks/useAuthState";
 import SearchBar from "../components/deck/SearchBar";
 import { useDoubleClickTransparency } from "../components/deck/DoubleClickTransparencyManager";
@@ -10,6 +10,9 @@ import TradeConfirmDialog from "../components/deck/TradeConfirmDialog";
 import BuyRequestModal from "../components/deck/BuyRequestModal";
 import ArtSelector from "../components/deck/ArtSelector";
 import DeleteQuantityDialog from "../components/deck/DeleteQuantityDialog";
+import DeckSettingsMenu from "../components/deck/DeckSettingsMenu";
+import ImportDeckModal from "../components/deck/ImportDeckModal";
+import ExportDeckModal from "../components/deck/ExportDeckModal";
 import { Button } from "../components/ui/button";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { AlertCircle } from "lucide-react";
@@ -37,10 +40,9 @@ const Deckbuilder = () => {
     addCard,
     updateCard,
     deleteCard,
-    canEdit 
+    canEdit
   } = useDeckCards(deckId);
-  const { refetch: refetchCards } = useDeckCards(deckId);
-  const doubleClickTransparency = useDoubleClickTransparency(updateCard, refetchCards);
+  const doubleClickTransparency = useDoubleClickTransparency(updateCard);
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [selectedCardForTrade, setSelectedCardForTrade] = useState(null);
   const [searchTimeout, setSearchTimeout] = useState(false);
@@ -55,6 +57,17 @@ const Deckbuilder = () => {
   const [showBuyRequestModal, setShowBuyRequestModal] = useState(false);
   const [selectedCardForBuy, setSelectedCardForBuy] = useState(null);
   const [deckOwnerName, setDeckOwnerName] = useState("");
+  
+  // ⚙️ Estados do menu de configurações
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const settingsButtonRef = useRef(null);
+  
+  // 🔄 MATCH REVERSO: Amigos que marcaram minhas cartas como wanted
+  const [friendsWantingMyCards, setFriendsWantingMyCards] = useState(new Map()); // Map<scryfall_id, [{ userId, displayName }]>
+  const [showReverseTradeModal, setShowReverseTradeModal] = useState(false);
+  const [selectedCardForReverseTrade, setSelectedCardForReverseTrade] = useState(null);
 
   // Protege contra decks locais - sistema agora é online-first apenas
   useEffect(() => {
@@ -75,30 +88,24 @@ const Deckbuilder = () => {
       setSearchTimeout(false);
       return;
     }
-
-    console.log("🔍 Iniciando timer para busca do deck:", deckId);
     
     // Tenta refetch após 2 segundos se deck não foi encontrado
     const refetchTimer = setTimeout(async () => {
       if (!decks?.find(deck => deck.id === deckId)) {
-        console.log("🔄 Deck não encontrado, tentando refetch...");
         try {
           await refetchDecks();
         } catch (error) {
-          console.error("❌ Erro no refetch:", error);
+          // Silencioso - não polui console
         }
       }
     }, 2000);
     
     // Aguarda 5 segundos antes de mostrar "deck não encontrado"
-    // Aumentado de 3 para 5 segundos para decks recém-criados
     const timeoutTimer = setTimeout(() => {
-      console.log("⏰ Timeout atingido - deck ainda não encontrado");
       setSearchTimeout(true);
     }, 5000);
 
     return () => {
-      console.log("🛑 Limpando timers de busca");
       clearTimeout(refetchTimer);
       clearTimeout(timeoutTimer);
     };
@@ -112,17 +119,10 @@ const Deckbuilder = () => {
       import("../lib/supabaseOperations").then(({ deckOperations }) => {
         deckOperations.getDeck(deckId)
           .then(deck => {
-            if (deck) {
-              setRemoteDeck(deck);
-              console.log("✅ Deck encontrado remotamente:", deck.name);
-            } else {
-              setRemoteDeck(null);
-              console.log("❌ Deck não encontrado remotamente");
-            }
+            setRemoteDeck(deck || null);
           })
           .catch(err => {
             setRemoteDeck(null);
-            console.error("❌ Erro ao buscar deck remotamente:", err);
           });
       });
     } else {
@@ -131,13 +131,7 @@ const Deckbuilder = () => {
   }, [decks, deckId]);
 
   const currentDeck = useMemo(() => {
-    const foundDeck = decks?.find(deck => deck.id === deckId) || remoteDeck;
-    if (foundDeck) {
-      console.log("✅ Deck encontrado:", foundDeck.name);
-    } else {
-      console.log("❌ Deck não encontrado na lista nem remotamente");
-    }
-    return foundDeck;
+    return decks?.find(deck => deck.id === deckId) || remoteDeck;
   }, [decks, deckId, remoteDeck]);
 
   // Estados de carregamento e erro
@@ -149,19 +143,10 @@ const Deckbuilder = () => {
   
   // Verifica se é um deck Trade de um amigo
   const isFriendTradeDeck = useMemo(() => {
-    const result = isViewOnly && 
+    return isViewOnly && 
            currentDeck && 
            (currentDeck.format === "Trade" || currentDeck.format === "Trades");
-    console.log("🔍 isFriendTradeDeck:", {
-      result,
-      isViewOnly,
-      currentDeck: currentDeck?.deck_name,
-      format: currentDeck?.format,
-      ownerId: currentDeck?.owner_id,
-      userId: user?.id
-    });
-    return result;
-  }, [isViewOnly, currentDeck, user?.id]);
+  }, [isViewOnly, currentDeck]);
 
   // Buscar nome do dono do deck se for deck de amigo
   useEffect(() => {
@@ -180,6 +165,131 @@ const Deckbuilder = () => {
     
     fetchOwnerName();
   }, [currentDeck?.owner_id, isViewOnly]);
+
+  // 🔵 BUSCAR MATCHES REVERSOS: Cartas minhas com is_transparent que amigos têm no Trade
+  useEffect(() => {
+    const fetchReverseMatches = async () => {
+      // Verificar se é MEU deck (não deck de amigo)
+      const isMyDeck = currentDeck && user?.id && currentDeck.owner_id === user.id;
+      
+      // ⚠️ IMPORTANTE: Aguarda carregamento das cartas antes de buscar matches
+      if (!user?.id || !isMyDeck || cardsLoading || !deckCards.length) {
+        return;
+      }
+
+      try {
+        const { supabase } = await import("../supabase");
+        
+        // 1. Pegar minhas cartas com is_transparent=true
+        const myTransparentCards = deckCards.filter(card => card.is_transparent === true);
+        
+        if (myTransparentCards.length === 0) {
+          setFriendsWantingMyCards(new Map());
+          return;
+        }
+        
+        const myTransparentScryfallIds = myTransparentCards.map(c => c.scryfall_id);
+
+        // 2. Buscar amigos
+        const { data: friendships, error: friendError } = await supabase
+          .from('friendships')
+          .select('user_id, friend_id')
+          .eq('status', 'accepted')
+          .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+
+        if (friendError) throw friendError;
+
+        const friendIds = friendships.map(f => 
+          f.user_id === user.id ? f.friend_id : f.user_id
+        );
+        
+        if (friendIds.length === 0) {
+          setFriendsWantingMyCards(new Map());
+          return;
+        }        // 3. Buscar decks Trade dos amigos (apenas decks para negociação)
+        const { data: friendTradeDecks, error: decksError } = await supabase
+          .from('decks')
+          .select('id, owner_id, name, format')
+          .in('owner_id', friendIds)
+          .or('format.eq.Trade,format.eq.Trades');
+
+        if (decksError) throw decksError;
+
+        if (!friendTradeDecks || friendTradeDecks.length === 0) {
+          console.log("⚠️ Nenhum deck Trade de amigos encontrado");
+          setFriendsWantingMyCards(new Map());
+          return;
+        }
+
+        const tradeDeckIds = friendTradeDecks.map(d => d.id);
+        console.log(`🔁 Encontrei ${tradeDeckIds.length} decks Trade de amigos:`, 
+          friendTradeDecks.map(d => ({ name: d.name, format: d.format }))
+        );
+
+        // 4. Buscar cartas nos decks Trade que fazem match com minhas transparentes
+        const { data: matchingCards, error: cardsError } = await supabase
+          .from('deck_cards')
+          .select('id, card_name, scryfall_id, deck_id')
+          .in('deck_id', tradeDeckIds)
+          .in('scryfall_id', myTransparentScryfallIds);
+
+        if (cardsError) throw cardsError;
+        
+        // 5. Buscar display_name dos donos dos decks
+        const ownerIds = [...new Set(friendTradeDecks.map(d => d.owner_id))];
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, display_name')
+          .in('id', ownerIds);
+
+        if (usersError) throw usersError;
+
+        // Criar map de owner_id -> display_name
+        const userMap = new Map(usersData?.map(u => [u.id, u.display_name]) || []);
+
+        // 6. Montar Map de matches
+        const matchesMap = new Map();
+        
+        if (matchingCards && matchingCards.length > 0) {
+          matchingCards.forEach(card => {
+            // Encontrar o deck que contém esta carta
+            const deck = friendTradeDecks.find(d => d.id === card.deck_id);
+            if (!deck) return;
+
+            const userId = deck.owner_id;
+            const displayName = userMap.get(userId) || 'Amigo';
+            
+            if (!matchesMap.has(card.scryfall_id)) {
+              matchesMap.set(card.scryfall_id, []);
+            }
+            
+            matchesMap.get(card.scryfall_id).push({
+              userId,
+              displayName,
+              deckId: card.deck_id
+            });
+          });
+        }
+
+        setFriendsWantingMyCards(matchesMap);
+
+      } catch (err) {
+        console.error("❌ Erro ao buscar matches reversos:", err);
+      }
+    };
+
+    fetchReverseMatches();
+  }, [user?.id, deckCards, currentDeck, cardsLoading]);
+
+  // 🔍 DEBUG: Monitorar mudanças no Map de matches reversos
+  useEffect(() => {
+    console.log("🔵 STATE friendsWantingMyCards MUDOU!", {
+      size: friendsWantingMyCards.size,
+      keys: Array.from(friendsWantingMyCards.keys()),
+      hasWashAway: friendsWantingMyCards.has('43411ade-be80-4535-8baa-7055e78496df'),
+      timestamp: new Date().toISOString()
+    });
+  }, [friendsWantingMyCards]);
 
   // Adiciona carta do Advanced Search (controle de execução única)
   const hasAddedRef = React.useRef(false);
@@ -325,6 +435,51 @@ const Deckbuilder = () => {
     setShowArtSelector(true);
   };
 
+  // Handler para importar deck
+  const handleImportDeck = async (cards) => {
+    console.log("📥 Importando deck:", cards);
+    
+    for (const cardData of cards) {
+      try {
+        // Buscar carta na API do Scryfall
+        const response = await fetch(
+          `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardData.name)}`
+        );
+        
+        if (response.ok) {
+          const cardInfo = await response.json();
+          
+          // Adicionar carta ao deck
+          await addCard({
+            scryfall_id: cardInfo.id,
+            card_name: cardInfo.name,
+            image_url: cardInfo.image_uris?.normal || cardInfo.card_faces?.[0]?.image_uris?.normal || "",
+            mana_cost: cardInfo.mana_cost || "",
+            type_line: cardInfo.type_line || "",
+            oracle_text: cardInfo.oracle_text || "",
+            quantity: cardData.quantity,
+            acquired: false,
+            card_faces: cardInfo.card_faces || null,
+            colors: cardInfo.colors || [],
+            color_identity: cardInfo.color_identity || [],
+            cmc: cardInfo.cmc || 0,
+            rarity: cardInfo.rarity || "",
+            set_code: cardInfo.set || "",
+            collector_number: cardInfo.collector_number || "",
+          });
+          
+          console.log(`✅ Adicionada: ${cardData.quantity}x ${cardInfo.name}`);
+        } else {
+          console.warn(`⚠️ Carta não encontrada: ${cardData.name}`);
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao adicionar ${cardData.name}:`, error);
+      }
+    }
+    
+    console.log("✅ Importação concluída!");
+  };
+
   const handleSelectArt = async (artData) => {
       let updates = { ...artData };
       // Se for carta dupla face, atualiza image_url e image_uris.normal em ambas as faces
@@ -460,25 +615,46 @@ const Deckbuilder = () => {
           </div>
 
           {!isViewOnly && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (isSelectionMode && selectedCards.length > 0) {
-                  handleDeleteSelected();
-                } else {
-                  setIsSelectionMode(!isSelectionMode);
-                  setSelectedCards([]);
-                }
-              }}
-              className={`${
-                isSelectionMode && selectedCards.length > 0
-                  ? "text-red-500 hover:text-red-400"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <Trash2 className="w-5 h-5" />
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  if (isSelectionMode && selectedCards.length > 0) {
+                    handleDeleteSelected();
+                  } else {
+                    setIsSelectionMode(!isSelectionMode);
+                    setSelectedCards([]);
+                  }
+                }}
+                className={`${
+                  isSelectionMode && selectedCards.length > 0
+                    ? "text-red-500 hover:text-red-400"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                <Trash2 className="w-5 h-5" />
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="icon"
+                ref={settingsButtonRef}
+                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                className="text-gray-400 hover:text-white relative"
+              >
+                <Settings className="w-5 h-5" />
+                
+                {/* Menu dropdown */}
+                <DeckSettingsMenu
+                  isOpen={showSettingsMenu}
+                  onClose={() => setShowSettingsMenu(false)}
+                  onImportClick={() => setShowImportModal(true)}
+                  onExportClick={() => setShowExportModal(true)}
+                  anchorRef={settingsButtonRef}
+                />
+              </Button>
+            </>
           )}
           {isViewOnly && <div className="w-10" />}
         </div>
@@ -530,9 +706,26 @@ const Deckbuilder = () => {
               {deckCards.map((card) => {
                 console.log('[DEBUG] Renderizando card:', {
                   cardId: card.id,
+                  cardName: card.card_name,
+                  scryfallId: card.scryfall_id,
                   is_transparent: card.is_transparent,
                   typeof: typeof card.is_transparent
                 });
+                
+                // 🔵 DEBUG: Verificar se tem match reverso
+                const hasMatch = friendsWantingMyCards.has(card.scryfall_id);
+                const matchData = friendsWantingMyCards.get(card.scryfall_id);
+                console.log('🔵 [DEBUG] Match reverso?', {
+                  cardName: card.card_name,
+                  scryfallId: card.scryfall_id,
+                  hasMatch,
+                  hasMatchType: typeof hasMatch,
+                  matchData,
+                  mapSize: friendsWantingMyCards.size,
+                  allMatchKeys: Array.from(friendsWantingMyCards.keys()),
+                  WILL_PASS_TO_COMPONENT: hasMatch
+                });
+                
                 const transparent = card.is_transparent === true || card.is_transparent === 'true';
                 
                 // Long press manual
@@ -543,7 +736,7 @@ const Deckbuilder = () => {
                   // Cancelar timer anterior se existir
                   if (pressTimer) clearTimeout(pressTimer);
                   
-                  // Iniciar timer de long press (500ms)
+                  // Iniciar timer de long press (800ms)
                   pressTimer = setTimeout(() => {
                     console.log("⏱️ Long press detectado!", {
                       isFriendTradeDeck,
@@ -559,11 +752,11 @@ const Deckbuilder = () => {
                       console.log("🎨 Abrindo ArtSelector via long press");
                       handleShowArtSelector(card);
                     }
-                  }, 500); // 500ms = meio segundo
+                  }, 800); // 800ms para evitar conflito com duplo clique
                 };
                 
                 const handleTouchEnd = async (e) => {
-                  // Cancelar long press se soltar antes de 500ms
+                  // Cancelar long press se soltar antes de 800ms
                   if (pressTimer) {
                     clearTimeout(pressTimer);
                     pressTimer = null;
@@ -619,6 +812,13 @@ const Deckbuilder = () => {
                     onTouchCancel={handleTouchCancel}
                     style={{ opacity: transparent ? 0.5 : 1, transition: "opacity 0.3s" }}
                   >
+                    {console.log("🔵🔵🔵 PASSANDO PROP hasReverseMatch:", {
+                      cardName: card.card_name,
+                      value: friendsWantingMyCards.has(card.scryfall_id),
+                      type: typeof friendsWantingMyCards.has(card.scryfall_id),
+                      isSelectionMode,
+                      shouldRender: friendsWantingMyCards.has(card.scryfall_id) && !isSelectionMode
+                    })}
                     <CardGridItem
                       card={card}
                       isSelectionMode={isSelectionMode && !isViewOnly}
@@ -627,7 +827,17 @@ const Deckbuilder = () => {
                       onShowArtSelector={handleShowArtSelector}
                       isViewOnly={isViewOnly}
                       currentUserId={user?.id}
-                      deckOwnerId={currentDeck?.user_id}
+                      deckOwnerId={currentDeck?.owner_id}
+                      hasReverseMatch={friendsWantingMyCards.has(card.scryfall_id)}
+                      onReverseMatchClick={() => {
+                        console.log("🔵 Clique na bolinha azul - Match reverso", {
+                          card: card.card_name,
+                          scryfall_id: card.scryfall_id,
+                          friends: friendsWantingMyCards.get(card.scryfall_id)
+                        });
+                        setSelectedCardForReverseTrade(card);
+                        setShowReverseTradeModal(true);
+                      }}
                     />
                   </div>
                 );
@@ -733,6 +943,26 @@ const Deckbuilder = () => {
       />
     )}
     
+    {/* 🔵 Modal de Match Reverso (bolinha azul - quando amigo tem carta que marco como wanted) */}
+    <BuyRequestModal
+      isOpen={showReverseTradeModal}
+      onClose={() => {
+        setShowReverseTradeModal(false);
+        setSelectedCardForReverseTrade(null);
+      }}
+      card={selectedCardForReverseTrade}
+      deckOwnerId={
+        selectedCardForReverseTrade && friendsWantingMyCards.has(selectedCardForReverseTrade.scryfall_id)
+          ? friendsWantingMyCards.get(selectedCardForReverseTrade.scryfall_id)[0]?.userId
+          : null
+      }
+      deckOwnerName={
+        selectedCardForReverseTrade && friendsWantingMyCards.has(selectedCardForReverseTrade.scryfall_id)
+          ? friendsWantingMyCards.get(selectedCardForReverseTrade.scryfall_id)[0]?.displayName
+          : "Amigo"
+      }
+    />
+    
     {/* Modal de interesse em comprar (deck Trade de amigo) */}
     <BuyRequestModal
       isOpen={showBuyRequestModal}
@@ -743,6 +973,22 @@ const Deckbuilder = () => {
       card={selectedCardForBuy}
       deckOwnerId={currentDeck?.owner_id}
       deckOwnerName={deckOwnerName || "Amigo"}
+    />
+
+    {/* Modal de importação de deck */}
+    <ImportDeckModal
+      isOpen={showImportModal}
+      onClose={() => setShowImportModal(false)}
+      onImport={handleImportDeck}
+    />
+
+    {/* Modal de exportação de deck */}
+    <ExportDeckModal
+      isOpen={showExportModal}
+      onClose={() => setShowExportModal(false)}
+      deckName={currentDeck?.name || "Deck"}
+      deckFormat={currentDeck?.format || "Unknown"}
+      cards={deckCards || []}
     />
   </div>
   );

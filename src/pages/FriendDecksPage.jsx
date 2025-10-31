@@ -1,13 +1,37 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { deckOperations } from "../lib/supabaseOperations";
+import { supabase } from "../supabase";
 
 function FriendDecksPage() {
   const { friendId } = useParams();
   const navigate = useNavigate();
   const [decks, setDecks] = useState([]);
+  const [friendName, setFriendName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function fetchFriendProfile() {
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("display_name")
+          .eq("id", friendId)
+          .single();
+        
+        if (error) throw error;
+        if (data) {
+          setFriendName(data.display_name || "Amigo");
+        }
+      } catch (err) {
+        console.error("[FriendDecksPage] erro ao buscar perfil:", err);
+        setFriendName("Amigo");
+      }
+    }
+
+    if (friendId) fetchFriendProfile();
+  }, [friendId]);
 
   useEffect(() => {
     async function fetchDecks() {
@@ -36,7 +60,9 @@ function FriendDecksPage() {
       >
         ← Voltar
       </button>
-      <h1 className="mb-6 text-3xl font-bold">Decks do Amigo</h1>
+      <h1 className="mb-6 text-3xl font-bold">
+        Decks de {friendName || "Amigo"}
+      </h1>
       {isLoading && <p>Carregando decks...</p>}
       {error && <div className="mb-4 w-full max-w-md text-red-400">{error}</div>}
       {!isLoading && decks.length === 0 && !error && (

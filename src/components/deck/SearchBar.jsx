@@ -42,34 +42,34 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
 
       setIsLoadingSuggestions(true);
       try {
-        // 🇧🇷 Detectar se é português (caracteres acentuados)
-        const isPortuguese = /[áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇ]/.test(query);
+        // � SEMPRE TENTAR BUSCAR EM PORTUGUÊS PRIMEIRO
+        // A API Scryfall suporta busca em PT mesmo sem acentos!
+        console.log('🔍 Buscando sugestões para:', query);
+        const ptResults = await getPortugueseAutocomplete(query);
         
-        if (isPortuguese) {
-          // Buscar diretamente em português na API MTG
-          console.log('🇧🇷 Buscando em português:', query);
-          const ptResults = await getPortugueseAutocomplete(query);
+        if (ptResults.length > 0) {
+          // ✅ Encontrou resultados em português!
+          console.log(`🇧🇷 Encontrou ${ptResults.length} resultados em PT`);
           
-          if (ptResults.length > 0) {
-            // Extrair apenas nomes em inglês para compatibilidade
-            const englishNames = ptResults.map(r => r.english);
-            setSuggestions(englishNames);
-            
-            // Usar os pares PT/EN diretamente
-            const translated = ptResults.map(r => ({
-              english: r.english,
-              portuguese: r.portuguese,
-              displayName: r.portuguese
-            }));
-            setTranslatedSuggestions(translated);
-            setShowSuggestions(true);
-            setSelectedIndex(-1);
-            setIsLoadingSuggestions(false);
-            return;
-          }
+          // Extrair apenas nomes em inglês para compatibilidade
+          const englishNames = ptResults.map(r => r.english);
+          setSuggestions(englishNames);
+          
+          // Usar os pares PT/EN diretamente
+          const translated = ptResults.map(r => ({
+            english: r.english,
+            portuguese: r.portuguese,
+            displayName: r.portuguese
+          }));
+          setTranslatedSuggestions(translated);
+          setShowSuggestions(true);
+          setSelectedIndex(-1);
+          setIsLoadingSuggestions(false);
+          return;
         }
         
-        // Busca padrão em inglês (Scryfall)
+        // 🔄 Fallback: Buscar em inglês no Scryfall
+        console.log('🇺🇸 Nenhum resultado em PT, buscando em inglês');
         const response = await fetch(
           `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
         );

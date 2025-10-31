@@ -44,12 +44,6 @@ export default function UserMenu() {
   const [showMessagesPanel, setShowMessagesPanel] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(null);
-
-  console.log('🔄 UserMenu - authUser:', authUser);
-  console.log('🆔 UserMenu - authUser.id:', authUser?.id);
-  console.log('🔄 UserMenu - authUser.email:', authUser?.email);
-  console.log('👤 UserMenu - currentUser:', currentUser);
-  console.log('⏳ UserMenu - profileLoading:', profileLoading);
   const [success, setSuccess] = useState(null);
 
   const navigate = useNavigate();
@@ -70,9 +64,6 @@ export default function UserMenu() {
 
   // Usar currentUser do hook useUserProfile
   const user = currentUser;
-  console.log('🎯 UserMenu - user final:', user);
-  console.log('🔍 UserMenu - display_name:', user?.display_name);
-  console.log('🔍 UserMenu - email:', user?.email);
 
   // Buscar usernames da tabela 'usernames'
   const { data: allUsernames = [] } = useQuery({
@@ -108,8 +99,6 @@ export default function UserMenu() {
   };
 
   const handleAddFriend = async () => {
-  console.log('[DEBUG] allUsernames:', JSON.stringify(allUsernames, null, 2));
-  console.log('[DEBUG] searchInput:', friendId.trim());
     setError(null);
     setSuccess(null);
     const searchInput = friendId.trim();
@@ -119,13 +108,8 @@ export default function UserMenu() {
     }
 
     try {
-      console.log('[DEBUG] Tentando encontrar usuário:', {
-        id: friendId.trim(),
-        username: friendId.trim().toLowerCase()
-      });
       const searchLower = searchInput.toLowerCase();
       const friendUsername = allUsernames.find((u) => u.id.toLowerCase() === searchLower);
-      console.log('[DEBUG] Resultado friendUsername:', friendUsername);
 
       if (!friendUsername) {
         setError(`Usuário não encontrado: "${searchInput}"`);
@@ -378,18 +362,13 @@ export default function UserMenu() {
           variant="ghost"
           onClick={async () => {
             try {
-              console.log('🚪 Usuário clicou em logout...');
-              
               // Limpar todos os caches
               queryClient.clear();
-              console.log('🧹 Cache limpo');
               
               await signOut();
-              console.log('✅ Logout concluído');
               
               // Aguardar um pouco para garantir que o estado seja atualizado
               setTimeout(() => {
-                console.log('🔄 Redirecionando para login...');
                 window.location.href = '/login';
               }, 100);
               

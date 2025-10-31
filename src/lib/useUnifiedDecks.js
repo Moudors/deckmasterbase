@@ -226,14 +226,16 @@ export function useDeckCards(deckId) {
     queryFn: async () => {
       if (!deckId) return [];
 
-      // Sempre busca do Supabase, nunca do cache offline
-      console.log(`🌐 Buscando cartas do deck ${deckId} diretamente do Supabase (sem cache offline)`);
+      // Sempre busca do Supabase
       const onlineCards = await deckCardOperations.getDeckCards(deckId);
       return onlineCards;
     },
     enabled: !!deckId,
-    staleTime: 2 * 60 * 1000, // 2 minutos
-    cacheTime: 5 * 60 * 1000, // 5 minutos
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    gcTime: 10 * 60 * 1000, // 10 minutos
+    refetchOnMount: false, // ✅ Não refetch ao montar
+    refetchOnWindowFocus: false, // ✅ Não refetch ao focar
+    refetchOnReconnect: false, // ✅ Não refetch ao reconectar
   });
 
   // Mutation para adicionar carta (apenas online)
@@ -243,15 +245,11 @@ export function useDeckCards(deckId) {
         throw new Error('Não é possível adicionar cartas offline. Conecte-se à internet.');
       }
       
-      console.log('➕ Adicionando carta online');
       return await deckCardOperations.addCardToDeck(deckId, cardData);
     },
-    onSuccess: (newCard) => {
-      // Adiciona a carta ao cache
-      queryClient.setQueryData(['cards', deckId], (old = []) => [newCard, ...old]);
-      
-      // Atualiza cache offline
-      offlineCacheManager.cacheDeckCards(deckId, [newCard, ...cards]);
+    onSuccess: () => {
+      // ✅ Apenas invalida e refetch - evita duplicação visual
+      queryClient.invalidateQueries({ queryKey: ['cards', deckId] });
     },
   });
 
@@ -262,32 +260,13 @@ export function useDeckCards(deckId) {
         throw new Error('Não é possível editar cartas offline. Conecte-se à internet.');
       }
       
-      console.log('✏️ Atualizando carta online:', { cardId, updates });
       return await deckCardOperations.updateDeckCard(cardId, updates);
     },
-    // Removido update otimístico: só atualiza cache após sucesso do banco
-    onMutate: async ({ cardId, updates }) => {
-      await queryClient.cancelQueries({ queryKey: ['cards', deckId] });
-      // Snapshot para rollback, mas sem update otimístico
-      const previousCards = queryClient.getQueryData(['cards', deckId]);
-      return { previousCards, cardId, updates };
-    },
-    onSuccess: (updatedCard, { cardId, updates }) => {
-      // Após atualização, força refetch das cartas diretamente do Supabase
+    onSuccess: () => {
+      // ✅ Apenas invalida e refetch - evita problemas de sincronização
       queryClient.invalidateQueries({ queryKey: ['cards', deckId] });
-      // Atualiza cache offline APENAS após sucesso
-      if (updatedCard) {
-        const cards = queryClient.getQueryData(['cards', deckId]) || [];
-        const updatedCards = cards.map(card => card.id === cardId ? { ...card, ...updatedCard } : card);
-        offlineCacheManager.cacheDeckCards(deckId, updatedCards);
-        console.log('[DEBUG] Cache offline atualizado após sucesso:', updatedCard);
-      }
     },
-    onError: (err, { cardId }, context) => {
-      // Rollback em caso de erro
-      if (context?.previousCards) {
-        queryClient.setQueryData(['cards', deckId], context.previousCards);
-      }
+    onError: (err) => {
       console.error('❌ Erro ao atualizar carta:', err);
     },
   });
@@ -299,18 +278,11 @@ export function useDeckCards(deckId) {
         throw new Error('Não é possível remover cartas offline. Conecte-se à internet.');
       }
       
-      console.log('🗑️ Removendo carta online');
       return await deckCardOperations.deleteDeckCard(cardId);
     },
-    onSuccess: (_, cardId) => {
-      // Remove a carta do cache
-      queryClient.setQueryData(['cards', deckId], (old = []) =>
-        old.filter(card => card.id !== cardId)
-      );
-      
-      // Atualiza cache offline
-      const filteredCards = cards.filter(card => card.id !== cardId);
-      offlineCacheManager.cacheDeckCards(deckId, filteredCards);
+    onSuccess: () => {
+      // ✅ Apenas invalida e refetch - evita problemas de sincronização
+      queryClient.invalidateQueries({ queryKey: ['cards', deckId] });
     },
   });
 

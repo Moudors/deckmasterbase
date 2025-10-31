@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function CardZoomModal({ card, onClose }) {
@@ -46,14 +47,15 @@ export default function CardZoomModal({ card, onClose }) {
   const currentFace = card.card_faces ? card.card_faces[faceIndex] : card;
   const imageUrl = currentFace.image_uris?.normal || currentFace.image_url || card.image_uris?.normal || card.image_url;
 
-  return (
+  // Renderizar o modal usando Portal para garantir opacity: 1
+  return createPortal(
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-        style={{ touchAction: 'auto' }}
+        style={{ touchAction: 'auto', opacity: 1 }}
         onClick={onClose}
       >
         <motion.div
@@ -62,13 +64,14 @@ export default function CardZoomModal({ card, onClose }) {
           exit={{ scale: 0.8, opacity: 0 }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
           className="relative max-w-md w-full"
-          style={{ touchAction: 'auto' }}
+          style={{ touchAction: 'auto', opacity: 1 }}
           onClick={(e) => e.stopPropagation()}
         >
           <img
             src={imageUrl}
             alt={card.card_name || card.name}
             className="w-full rounded-lg shadow-2xl"
+            style={{ opacity: 1 }}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           />
@@ -124,6 +127,7 @@ export default function CardZoomModal({ card, onClose }) {
           </button>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

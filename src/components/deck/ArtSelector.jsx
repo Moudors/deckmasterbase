@@ -7,7 +7,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, Check, Plus, Copy } from "lucide-react";
+import { Loader2, Check, Plus, Minus } from "lucide-react";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -23,6 +23,7 @@ export default function ArtSelector({
   const [versions, setVersions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(null);
+  const [newQuantity, setNewQuantity] = useState(1);
   const queryClient = useQueryClient();
 
   // 🔄 Buscar versões da carta
@@ -54,22 +55,17 @@ export default function ArtSelector({
   useEffect(() => {
     if (isOpen && card) {
       fetchCardVersions();
+      setNewQuantity(card.quantity || 1); // Inicia com a quantidade atual
     }
   }, [isOpen, card, fetchCardVersions]);
 
   // 🔄 Trocar arte da carta atual
-  const handleConfirm = async () => {
+  const handleConfirm = useCallback(async () => {
     if (selectedVersion && selectedVersion !== card.scryfall_id) {
       const version = versions.find((v) => v.id === selectedVersion);
       if (version) {
         const imageUrl =
           version.image_uris?.normal || version.card_faces?.[0]?.image_uris?.normal;
-
-        console.log("🎨 ArtSelector: Selecionada nova arte", {
-          card: card.card_name,
-          oldImage: card.image_url,
-          newImage: imageUrl,
-        });
 
         // ✅ Apenas chama o callback - deixa o Deckbuilder gerenciar o update
         onSelectArt?.({
@@ -83,10 +79,10 @@ export default function ArtSelector({
       }
     }
     onClose(); // fecha modal se nada mudou
-  };
+  }, [selectedVersion, card?.scryfall_id, versions, onSelectArt, onClose]);
 
   // 🔄 Adicionar nova carta com arte diferente
-  const handleAddDifferentArt = async () => {
+  const handleAddDifferentArt = useCallback(async () => {
     if (!selectedVersion || !deckId || !onAddCard) return;
 
     const version = versions.find((v) => v.id === selectedVersion);
@@ -112,23 +108,33 @@ export default function ArtSelector({
     } catch (error) {
       console.error("Erro ao adicionar carta com arte diferente:", error);
     }
-  };
+  }, [selectedVersion, deckId, onAddCard, versions, onClose]);
 
   // 🔄 Adicionar mais cópias da carta atual
   const handleAddMoreCopies = async () => {
-    if (!card || !onUpdateCard) return;
+    if (!card || !onUpdateCard || newQuantity <= 0) return;
 
     try {
       // Usar a função de atualizar carta do hook unificado
       await onUpdateCard({
         cardId: card.id,
-        updates: { quantity: (card.quantity || 1) + 1 }
+        updates: { quantity: newQuantity }
       });
 
       onClose();
     } catch (error) {
       console.error("Erro ao adicionar mais cópias:", error);
     }
+  };
+
+  // Incrementar quantidade
+  const incrementQuantity = () => {
+    setNewQuantity(prev => prev + 1);
+  };
+
+  // Decrementar quantidade
+  const decrementQuantity = () => {
+    setNewQuantity(prev => Math.max(1, prev - 1)); // Mínimo 1
   };
 
   return (
@@ -205,14 +211,35 @@ export default function ArtSelector({
                   <Plus className="w-5 h-5 mr-2" />
                   Adicionar Arte Diferente
                 </Button>
-                                <Button
-                  onClick={handleAddMoreCopies}
-                  variant="outline"
-                  className="border-blue-600 text-blue-400 hover:bg-blue-600/20 hover:text-blue-300 h-12"
-                >
-                  <Copy className="w-5 h-5 mr-2" />
-                  Adicionar Mais Cópias
-                </Button>
+                
+                {/* Contador de cópias com botões +/- */}
+                <div className="flex items-center gap-2 h-12">
+                  <Button
+                    onClick={decrementQuantity}
+                    variant="outline"
+                    disabled={newQuantity <= 1}
+                    className="border-blue-600 text-blue-400 hover:bg-blue-600/20 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed w-12 h-12 p-0"
+                  >
+                    <Minus className="w-5 h-5" />
+                  </Button>
+                  
+                  <Button
+                    onClick={handleAddMoreCopies}
+                    variant="outline"
+                    disabled={newQuantity === (card?.quantity || 1)}
+                    className="border-blue-600 text-blue-400 hover:bg-blue-600/20 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed flex-1 h-12 font-bold text-2xl"
+                  >
+                    {newQuantity}
+                  </Button>
+                  
+                  <Button
+                    onClick={incrementQuantity}
+                    variant="outline"
+                    className="border-blue-600 text-blue-400 hover:bg-blue-600/20 hover:text-blue-300 w-12 h-12 p-0"
+                  >
+                    <Plus className="w-5 h-5" />
+                  </Button>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3">

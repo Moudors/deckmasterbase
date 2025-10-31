@@ -53,6 +53,12 @@ function Home() {
   const [isExporting, setIsExporting] = useState(false);
   const [warningMessage, setWarningMessage] = useState(null);
   
+  // Estados para reordenação de decks
+  const [reorderMode, setReorderMode] = useState(false);
+  const [reorderingDeck, setReorderingDeck] = useState(null);
+  const [localDecks, setLocalDecks] = useState(null); // Estado local para animações suaves
+  const [isSavingOrder, setIsSavingOrder] = useState(false); // Indicador de salvamento
+  
   // Estados para busca (cartas e capa)
   const [searchOptionsOpen, setSearchOptionsOpen] = useState(false);
   const [rulesDialogOpen, setRulesDialogOpen] = useState(false);
@@ -89,21 +95,17 @@ function Home() {
     }
   }, [location.state]);
 
+  // Sincronizar localDecks com decks vindos do servidor
+  useEffect(() => {
+    if (decks && !reorderMode) {
+      setLocalDecks(decks);
+    }
+  }, [decks, reorderMode]);
+
   // Computadas
   const hasDecks = decks && decks.length > 0;
   const isOfflineMode = !connectivity.canSaveData;
-
-  // 🔍 Debug logs para identificar problema
-  console.log("🏠 HOME DEBUG:", {
-    isLoading,
-    decksError,
-    decks: decks ? { 
-      length: decks.length, 
-      items: decks.map(d => ({ id: d.id, name: d.name, format: d.format, cover: d.cover_image_url })) 
-    } : null,
-    hasDecks,
-    user: user ? { id: user.id, email: user.email } : null
-  });
+  const displayDecks = localDecks || decks || []; // Usa localDecks para animações suaves
 
   // Funções auxiliares
   const normalizeFormat = (format) => {
@@ -383,6 +385,150 @@ function Home() {
     }
   };
 
+  // 🔄 Funções de reordenação de decks
+  const handleLongPressDeck = (deck) => {
+    console.log("🔒 Long press detectado no deck:", deck.name);
+    
+    // Vibração ao entrar no modo de reordenação
+    if (navigator.vibrate) {
+      navigator.vibrate(50); // Vibração curta de 50ms
+    }
+    
+    setReorderingDeck(deck);
+    setReorderMode(true);
+    console.log("✅ Modo de reordenação ativado");
+  };
+
+  const handleMoveDeckUp = async () => {
+    if (!reorderingDeck || !displayDecks) {
+      console.log("⚠️ Não pode mover para cima:", { reorderingDeck, displayDecks });
+      return;
+    }
+    
+    const currentIndex = displayDecks.findIndex(d => d.id === reorderingDeck.id);
+    console.log("⬆️ Movendo deck para cima:", {
+      deck: reorderingDeck.name,
+      currentIndex,
+      totalDecks: displayDecks.length
+    });
+    
+    if (currentIndex <= 0) {
+      console.log("⚠️ Deck já está no topo");
+      // Vibração de feedback negativo
+      if (navigator.vibrate) {
+        navigator.vibrate([30, 50, 30]); // Padrão de erro
+      }
+      return; // Já está no topo
+    }
+    
+    // Vibração de sucesso
+    if (navigator.vibrate) {
+      navigator.vibrate(30); // Vibração curta ao mover
+    }
+    
+    // Criar nova ordem LOCALMENTE para animação instantânea
+    const newDecks = [...displayDecks];
+    const temp = newDecks[currentIndex];
+    newDecks[currentIndex] = newDecks[currentIndex - 1];
+    newDecks[currentIndex - 1] = temp;
+    
+    // Atualizar visualmente IMEDIATAMENTE
+    setLocalDecks(newDecks);
+    
+    console.log("📋 Nova ordem criada:", newDecks.map((d, i) => ({ index: i, name: d.name })));
+    
+    // Atualizar ordem no banco em background (sem await para ser mais rápido)
+    updateDeckOrders(newDecks).catch(err => {
+      console.error("❌ Erro ao salvar ordem:", err);
+      // Em caso de erro, reverte para ordem original
+      setLocalDecks(decks);
+    });
+  };
+
+  const handleMoveDeckDown = async () => {
+    if (!reorderingDeck || !displayDecks) {
+      console.log("⚠️ Não pode mover para baixo:", { reorderingDeck, displayDecks });
+      return;
+    }
+    
+    const currentIndex = displayDecks.findIndex(d => d.id === reorderingDeck.id);
+    console.log("⬇️ Movendo deck para baixo:", {
+      deck: reorderingDeck.name,
+      currentIndex,
+      totalDecks: displayDecks.length
+    });
+    
+    if (currentIndex >= displayDecks.length - 1) {
+      console.log("⚠️ Deck já está no final");
+      // Vibração de feedback negativo
+      if (navigator.vibrate) {
+        navigator.vibrate([30, 50, 30]); // Padrão de erro
+      }
+      return; // Já está no final
+    }
+    
+    // Vibração de sucesso
+    if (navigator.vibrate) {
+      navigator.vibrate(30); // Vibração curta ao mover
+    }
+    
+    // Criar nova ordem LOCALMENTE para animação instantânea
+    const newDecks = [...displayDecks];
+    const temp = newDecks[currentIndex];
+    newDecks[currentIndex] = newDecks[currentIndex + 1];
+    newDecks[currentIndex + 1] = temp;
+    
+    // Atualizar visualmente IMEDIATAMENTE
+    setLocalDecks(newDecks);
+    
+    console.log("📋 Nova ordem criada:", newDecks.map((d, i) => ({ index: i, name: d.name })));
+    
+    // Atualizar ordem no banco em background (sem await para ser mais rápido)
+    updateDeckOrders(newDecks).catch(err => {
+      console.error("❌ Erro ao salvar ordem:", err);
+      // Em caso de erro, reverte para ordem original
+      setLocalDecks(decks);
+    });
+  };
+
+  const updateDeckOrders = async (orderedDecks) => {
+    setIsSavingOrder(true);
+    try {
+      console.log("🔄 Salvando ordem no banco de dados...");
+      
+      // Atualizar a ordem de cada deck em PARALELO para ser mais rápido
+      const updatePromises = orderedDecks.map((deck, index) => 
+        updateDeck({ 
+          deckId: deck.id, 
+          updates: { display_order: index } 
+        })
+      );
+      
+      await Promise.all(updatePromises);
+      
+      console.log("✅ Ordem salva no banco de dados!");
+    } catch (error) {
+      console.error("❌ Erro ao salvar ordem:", error);
+      throw error; // Propaga erro para tratamento acima
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
+
+  const cancelReorderMode = () => {
+    console.log("✅ Saindo do modo de reordenação");
+    
+    // Sai do modo IMEDIATAMENTE (não espera salvamento)
+    setReorderMode(false);
+    setReorderingDeck(null);
+    
+    // Se houver mudanças pendentes, força sincronização com servidor
+    if (localDecks && JSON.stringify(localDecks) !== JSON.stringify(decks)) {
+      console.log("🔄 Sincronizando mudanças finais com servidor...");
+      refetch(); // Atualiza com dados do servidor
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-purple-950">
       {/* 🌐 Barra de status de conectividade */}
@@ -414,6 +560,7 @@ function Home() {
       )}
 
       <div className={`flex h-full flex-col items-center px-4 text-white ${isOfflineMode ? 'pt-24' : 'pt-20'}`}>
+        
         {/* Alertas de erro */}
         {(decksError || createError || deleteError) && (
           <div className="mb-4 w-full max-w-md">
@@ -466,53 +613,141 @@ function Home() {
 
         {hasDecks && (
           <div className="w-full max-w-lg overflow-y-auto max-h-[calc(100vh-200px)] pb-24 scrollbar-hide space-y-6">
-            {decks?.map((deck) => (
-              <div
-                key={deck.id}
-                className="relative cursor-pointer overflow-hidden rounded-xl shadow-lg min-h-[240px] flex-shrink-0"
-                onClick={() => {
-                  console.log("🎯 Clicou no deck:", { name: deck.name, format: deck.format });
-                  
-                  // Se for Coleção de cartas, redireciona para /collection
-                  if (deck.format === "Coleção de cartas") {
-                    console.log("➡️ Redirecionando para /collection");
-                    navigate("/collection");
-                  } else if (deck.format === "Trade" || deck.format === "Trades") {
-                    // Se for Trade ou Trades, redireciona para /trade
-                    console.log("➡️ Redirecionando para /trade");
-                    navigate("/trade");
-                  } else {
-                    console.log("➡️ Redirecionando para /deckbuilder");
-                    navigate(`/deckbuilder/${deck.id}`);
-                  }
-                }}
-              >
+            {displayDecks?.map((deck) => {
+              const isBeingReordered = reorderMode && reorderingDeck?.id === deck.id;
+              let longPressTimer = null;
+
+              return (
                 <div
-                  className="h-56 w-full bg-cover bg-center"
+                  key={deck.id}
+                  className={`relative cursor-pointer overflow-hidden rounded-xl shadow-lg min-h-[240px] flex-shrink-0 transition-all duration-300 ease-in-out ${
+                    isBeingReordered ? 'ring-4 ring-orange-500 scale-105' : 'scale-100'
+                  }`}
                   style={{
-                    backgroundImage: `url(${deck.cover_image_url || "https://placehold.co/400x200"})`,
+                    transform: isBeingReordered ? 'scale(1.05)' : 'scale(1)',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
-                />
-
-                {/* Botão de opções (substituindo estrela) */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    setSelectedDeck(deck);
-                    setDeckOptionsOpen(true);
+                  onClick={() => {
+                    if (reorderMode) return; // Não navega se estiver em modo reordenação
+                    
+                    console.log("🎯 Clicou no deck:", { name: deck.name, format: deck.format });
+                    
+                    // Se for Coleção de cartas, redireciona para /collection
+                    if (deck.format === "Coleção de cartas") {
+                      console.log("➡️ Redirecionando para /collection");
+                      navigate("/collection");
+                    } else if (deck.format === "Trade" || deck.format === "Trades") {
+                      // Se for Trade ou Trades, redireciona para /trade
+                      console.log("➡️ Redirecionando para /trade");
+                      navigate("/trade");
+                    } else {
+                      console.log("➡️ Redirecionando para /deckbuilder");
+                      navigate(`/deckbuilder/${deck.id}`);
+                    }
                   }}
-                  className="absolute top-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 text-lg"
+                  onTouchStart={(e) => {
+                    longPressTimer = setTimeout(() => {
+                      handleLongPressDeck(deck);
+                    }, 800);
+                  }}
+                  onTouchEnd={() => {
+                    if (longPressTimer) clearTimeout(longPressTimer);
+                  }}
+                  onMouseDown={(e) => {
+                    longPressTimer = setTimeout(() => {
+                      handleLongPressDeck(deck);
+                    }, 800);
+                  }}
+                  onMouseUp={() => {
+                    if (longPressTimer) clearTimeout(longPressTimer);
+                  }}
+                  onMouseLeave={() => {
+                    if (longPressTimer) clearTimeout(longPressTimer);
+                  }}
                 >
-                  ⚙
-                </button>
+                  <div
+                    className="h-56 w-full bg-cover bg-center"
+                    style={{
+                      backgroundImage: `url(${deck.cover_image_url || "https://placehold.co/400x200"})`,
+                    }}
+                  />
 
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-5">
-                  <h2 className="text-2xl font-bold">{deck.name}</h2>
-                  <p className="text-base text-gray-300">{normalizeFormat(deck.format)}</p>
+                  {/* Botões de reordenação (aparecem quando está em modo reorder) */}
+                  {isBeingReordered && (
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center gap-6 animate-fadeIn">
+                      {/* Botão Mover para Cima */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveDeckUp();
+                        }}
+                        disabled={displayDecks.findIndex(d => d.id === deck.id) === 0}
+                        className={`flex h-14 w-14 items-center justify-center rounded-full shadow-xl transform transition-all duration-200 active:scale-90 ${
+                          displayDecks.findIndex(d => d.id === deck.id) === 0
+                            ? 'bg-gray-300 cursor-not-allowed opacity-40'
+                            : 'bg-white hover:scale-110 hover:shadow-2xl'
+                        }`}
+                      >
+                        <svg className={`w-7 h-7 ${displayDecks.findIndex(d => d.id === deck.id) === 0 ? 'text-gray-500' : 'text-gray-900'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      
+                      {/* Botão Confirmar */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cancelReorderMode();
+                        }}
+                        className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-xl hover:scale-110 hover:shadow-2xl transform transition-all duration-200 active:scale-90"
+                      >
+                        <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                      
+                      {/* Botão Mover para Baixo */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveDeckDown();
+                        }}
+                        disabled={displayDecks.findIndex(d => d.id === deck.id) === displayDecks.length - 1}
+                        className={`flex h-14 w-14 items-center justify-center rounded-full shadow-xl transform transition-all duration-200 active:scale-90 ${
+                          displayDecks.findIndex(d => d.id === deck.id) === displayDecks.length - 1
+                            ? 'bg-gray-300 cursor-not-allowed opacity-40'
+                            : 'bg-white hover:scale-110 hover:shadow-2xl'
+                        }`}
+                      >
+                        <svg className={`w-7 h-7 ${displayDecks.findIndex(d => d.id === deck.id) === displayDecks.length - 1 ? 'text-gray-500' : 'text-gray-900'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Botão de opções (substituindo estrela) */}
+                  {!isBeingReordered && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setSelectedDeck(deck);
+                        setDeckOptionsOpen(true);
+                      }}
+                      className="absolute top-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 text-lg"
+                    >
+                      ⚙
+                    </button>
+                  )}
+
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-5">
+                    <h2 className="text-2xl font-bold">{deck.name}</h2>
+                    <p className="text-base text-gray-300">{normalizeFormat(deck.format)}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
