@@ -44,50 +44,87 @@ export async function searchPortugueseToEnglish(portugueseName: string): Promise
 }
 
 /**
- * 🎯 Autocomplete em Português
- * Busca cartas portuguesas e retorna lista de sugestões
+ * 🎯 Autocomplete em Português usando BUSCA HÍBRIDA
+ * 
+ * PROBLEMA: API MTG.io não suporta busca parcial em português
+ * SOLUÇÃO: Usar printed_name do Scryfall diretamente
+ * 
+ * Quando usuário digita "Relâ", queremos sugerir "Relâmpago" (Lightning Bolt)
  */
 export async function getPortugueseAutocomplete(query: string): Promise<Array<{ portuguese: string; english: string }>> {
   if (query.length < 2) return [];
 
   try {
-    // Buscar cartas portuguesas que contenham o termo
+    console.log('🔍 Buscando autocomplete PT para:', query);
+    
+    // 🌟 Buscar todas cartas em português no Scryfall
+    // Usar busca por printed_name (nome impresso) em português
     const response = await fetch(
-      `https://api.magicthegathering.io/v1/cards?language=Portuguese (Brazil)&pageSize=10`
+      `https://api.scryfall.com/cards/search?q=lang:pt+printed_name:/${query}/&unique=prints&order=name`
+    );
+    
+    if (!response.ok) {
+      console.log('⚠️ Busca em português falhou, tentando fallback');
+      // Fallback: buscar em inglês e tentar traduzir
+      return await fallbackEnglishSearch(query);
+    }
+    
+    const data = await response.json();
+    const cards = data.data || [];
+    
+    if (cards.length === 0) {
+      console.log('⚠️ Nenhum resultado, usando fallback');
+      return await fallbackEnglishSearch(query);
+    }
+    
+    // Mapear resultados
+    const results: Array<{ portuguese: string; english: string }> = [];
+    const seen = new Set<string>(); // Evitar duplicatas
+    
+    for (const card of cards.slice(0, 10)) {
+      const portugueseName = card.printed_name || card.name;
+      const englishName = card.name;
+      
+      if (!seen.has(englishName)) {
+        seen.add(englishName);
+        results.push({
+          portuguese: portugueseName,
+          english: englishName
+        });
+        console.log(`  ✅ ${portugueseName} (${englishName})`);
+      }
+    }
+    
+    console.log(`🎯 Retornando ${results.length} sugestões em português`);
+    return results;
+    
+  } catch (error) {
+    console.error('❌ Erro no autocomplete português:', error);
+    return await fallbackEnglishSearch(query);
+  }
+}
+
+/**
+ * 🔄 Fallback: Buscar em inglês quando busca em português falha
+ */
+async function fallbackEnglishSearch(query: string): Promise<Array<{ portuguese: string; english: string }>> {
+  try {
+    const response = await fetch(
+      `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
     );
     
     if (!response.ok) return [];
     
     const data = await response.json();
-    const cards: MTGCard[] = data.cards || [];
+    const names: string[] = data.data || [];
     
-    // Filtrar e mapear resultados
-    const results: Array<{ portuguese: string; english: string }> = [];
-    const lowerQuery = query.toLowerCase();
-    
-    for (const card of cards) {
-      if (!card.foreignNames) continue;
-      
-      // Encontrar nome português
-      const ptName = card.foreignNames.find(
-        (fn) => fn.language === 'Portuguese (Brazil)'
-      );
-      
-      if (ptName && ptName.name.toLowerCase().includes(lowerQuery)) {
-        results.push({
-          portuguese: ptName.name,
-          english: card.name
-        });
-        
-        if (results.length >= 10) break;
-      }
-    }
-    
-    console.log(`🔍 Encontradas ${results.length} sugestões em português`);
-    return results;
-    
+    // Retornar nomes em inglês (sem tradução)
+    return names.slice(0, 10).map(name => ({
+      portuguese: name,
+      english: name
+    }));
   } catch (error) {
-    console.error('❌ Erro no autocomplete português:', error);
+    console.error('❌ Fallback também falhou:', error);
     return [];
   }
 }
