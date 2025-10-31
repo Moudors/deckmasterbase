@@ -85,8 +85,10 @@ const LoginPage: React.FC = () => {
     setLoginLoading(true);
     try {
       console.log('🔄 Iniciando login com Google...');
-      await signInWithGoogle();
+      const result = await signInWithGoogle();
+      console.log('✅ OAuth iniciado:', result);
       // Para OAuth, o redirect é automático. O useEffect vai detectar quando voltar logado
+      // Não desativa loading aqui pois o redirect vai acontecer
     } catch (err: any) {
       console.error('❌ Erro no login Google:', err);
       setError("Erro no login com Google: " + err.message);

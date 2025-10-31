@@ -1,7 +1,9 @@
 /**
- * 🌍 Sistema de Busca Multilíngue Scryfall
+ * 🌍 Sistema de Busca Multilíngue Scryfall + MTG API
  * Suporta busca de cartas em português, espanhol e outros idiomas
  */
+
+import { translatePortugueseWithCache } from './mtgioSearch';
 
 export interface ScryfallCard {
   id: string;
@@ -55,13 +57,44 @@ export async function getMultilingualAutocomplete(query: string): Promise<string
 }
 
 /**
+ * 🔍 Detectar se texto está em português
+ * Heurística simples: caracteres acentuados comuns em português
+ */
+function isPortuguese(text: string): boolean {
+  const portugueseChars = /[áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇ]/;
+  return portugueseChars.test(text);
+}
+
+/**
  * 🎯 Busca de Carta com Suporte Multilíngue
- * Tenta 5 estratégias progressivas para encontrar a carta
+ * Tenta 6 estratégias progressivas para encontrar a carta
  */
 export async function searchCardMultilingual(cardName: string): Promise<ScryfallCard | null> {
   if (!cardName || cardName.trim().length === 0) return null;
 
   const name = cardName.trim();
+
+  // ✅ ESTRATÉGIA 0: Se está em português, traduzir para inglês primeiro
+  if (isPortuguese(name)) {
+    console.log('🇧🇷 Detectado texto em português:', name);
+    try {
+      const englishName = await translatePortugueseWithCache(name);
+      if (englishName) {
+        console.log(`🌍 Traduzido: "${name}" → "${englishName}"`);
+        // Buscar a carta em inglês no Scryfall
+        const res = await fetch(
+          `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(englishName)}`
+        );
+        if (res.ok) {
+          const card = await res.json();
+          console.log('✅ Carta encontrada via tradução PT→EN:', card.name);
+          return card;
+        }
+      }
+    } catch (error) {
+      console.log('⏭️ Tradução PT→EN falhou, tentando outras estratégias...');
+    }
+  }
 
   // ✅ Estratégia 1: Busca fuzzy (melhor para inglês e nomes aproximados)
   try {

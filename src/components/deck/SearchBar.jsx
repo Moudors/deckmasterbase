@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { deckCardOperations } from "../../lib/supabaseOperations";
 import { useVisualTranslation } from "../../hooks/useVisualTranslation";
 import { searchCardMultilingual } from "../../api/multilingualSearch";
+import { getPortugueseAutocomplete } from "../../api/mtgioSearch";
 
 export default function SearchBar({ deckId, isSearching, setIsSearching }) {
   const [query, setQuery] = useState("");
@@ -41,6 +42,34 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
 
       setIsLoadingSuggestions(true);
       try {
+        // 🇧🇷 Detectar se é português (caracteres acentuados)
+        const isPortuguese = /[áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇ]/.test(query);
+        
+        if (isPortuguese) {
+          // Buscar diretamente em português na API MTG
+          console.log('🇧🇷 Buscando em português:', query);
+          const ptResults = await getPortugueseAutocomplete(query);
+          
+          if (ptResults.length > 0) {
+            // Extrair apenas nomes em inglês para compatibilidade
+            const englishNames = ptResults.map(r => r.english);
+            setSuggestions(englishNames);
+            
+            // Usar os pares PT/EN diretamente
+            const translated = ptResults.map(r => ({
+              english: r.english,
+              portuguese: r.portuguese,
+              displayName: r.portuguese
+            }));
+            setTranslatedSuggestions(translated);
+            setShowSuggestions(true);
+            setSelectedIndex(-1);
+            setIsLoadingSuggestions(false);
+            return;
+          }
+        }
+        
+        // Busca padrão em inglês (Scryfall)
         const response = await fetch(
           `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
         );
