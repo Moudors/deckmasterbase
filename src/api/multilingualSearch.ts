@@ -160,10 +160,10 @@ export async function getPortuguesePrints(cardName: string): Promise<ScryfallCar
     let nextUrl: string | null = card.prints_search_uri;
 
     while (nextUrl) {
-      const res = await fetch(nextUrl);
+      const res: Response = await fetch(nextUrl);
       if (!res.ok) break;
 
-      const data = await res.json();
+      const data: any = await res.json();
       allPrints = allPrints.concat(data.data || []);
       nextUrl = data.has_more ? data.next_page : null;
     }
