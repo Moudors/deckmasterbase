@@ -5,16 +5,20 @@ import { Search, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { deckCardOperations } from "../../lib/supabaseOperations";
+import { useVisualTranslation } from "../../hooks/useVisualTranslation";
+import { searchCardMultilingual } from "../../api/multilingualSearch";
 
 export default function SearchBar({ deckId, isSearching, setIsSearching }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
+  const [translatedSuggestions, setTranslatedSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const searchRef = useRef(null);
   const inputRef = useRef(null);
   const queryClient = useQueryClient();
+  const { translateSuggestions } = useVisualTranslation();
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -30,6 +34,7 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
     const fetchSuggestions = async () => {
       if (query.trim().length < 2) {
         setSuggestions([]);
+        setTranslatedSuggestions([]);
         setShowSuggestions(false);
         return;
       }
@@ -40,12 +45,20 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
           `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
         );
         const data = await response.json();
-        setSuggestions(data.data || []);
+        const englishSuggestions = data.data || [];
+        
+        setSuggestions(englishSuggestions);
+        
+        // 🌍 Traduzir para exibição visual
+        const translated = await translateSuggestions(englishSuggestions);
+        setTranslatedSuggestions(translated);
+        
         setShowSuggestions(true);
         setSelectedIndex(-1);
       } catch (error) {
         console.error("Erro ao buscar sugestões:", error);
         setSuggestions([]);
+        setTranslatedSuggestions([]);
       } finally {
         setIsLoadingSuggestions(false);
       }
@@ -53,7 +66,7 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
 
     const debounceTimer = setTimeout(fetchSuggestions, 300);
     return () => clearTimeout(debounceTimer);
-  }, [query]);
+  }, [query, translateSuggestions]);
 
   // 🔄 Adicionar carta ao deck
   const handleSearch = async (cardName) => {
@@ -61,11 +74,14 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
     setIsSearching(true);
 
     try {
-      // Buscar dados completos da carta no Scryfall
-      const response = await fetch(
-        `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`
-      );
-      const cardData = await response.json();
+      // 🌍 Busca multilíngue
+      const cardData = await searchCardMultilingual(cardName);
+      
+      if (!cardData) {
+        console.error('❌ Carta não encontrada:', cardName);
+        setIsSearching(false);
+        return;
+      }
 
       const imageUrl =
         cardData.image_uris?.normal || cardData.card_faces?.[0]?.image_uris?.normal;
@@ -133,16 +149,7 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
       // Resetar estado e focar input para permitir adicionar mais
       setQuery("");
       setSuggestions([]);
-      setShowSuggestions(false);
-      try {
-        inputRef.current?.focus();
-      } catch (e) {
-        /* ignore */
-      }
-
-      // Resetar estado e focar input para permitir adicionar mais
-      setQuery("");
-      setSuggestions([]);
+      setTranslatedSuggestions([]);
       setShowSuggestions(false);
       try {
         inputRef.current?.focus();
@@ -158,19 +165,20 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-      handleSearch(suggestions[selectedIndex]);
+    if (selectedIndex >= 0 && translatedSuggestions[selectedIndex]) {
+      // Usar nome em inglês para buscar
+      handleSearch(translatedSuggestions[selectedIndex].english);
     } else if (query.trim()) {
       handleSearch(query.trim());
     }
   };
 
   const handleKeyDown = (e) => {
-    if (!showSuggestions || suggestions.length === 0) return;
+    if (!showSuggestions || translatedSuggestions.length === 0) return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : prev));
+      setSelectedIndex((prev) => (prev < translatedSuggestions.length - 1 ? prev + 1 : prev));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
@@ -180,8 +188,8 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
     }
   };
 
-  const handleSuggestionClick = (suggestion) => {
-    handleSearch(suggestion);
+  const handleSuggestionClick = (englishName) => {
+    handleSearch(englishName);
   };
 
   return (
@@ -201,28 +209,28 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
             ref={inputRef}
             onKeyDown={handleKeyDown}
             onFocus={() => {
-              if (suggestions.length > 0) {
+              if (translatedSuggestions.length > 0) {
                 setShowSuggestions(true);
               }
             }}
-            placeholder="Buscar carta no Scryfall..."
+            placeholder="Buscar carta (qualquer idioma)..."
             className="pl-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500"
             autoComplete="off"
           />
 
-          {/* Suggestions Dropdown */}
+          {/* 🌍 Suggestions Dropdown com Traduções */}
           <AnimatePresence>
-            {showSuggestions && suggestions.length > 0 && (
+            {showSuggestions && translatedSuggestions.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full left-0 right-0 mt-2 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl max-h-80 overflow-y-auto z-50"
               >
-                {suggestions.map((suggestion, index) => (
+                {translatedSuggestions.map((suggestion, index) => (
                   <motion.div
-                    key={index}
-                    onClick={() => handleSuggestionClick(suggestion)}
+                    key={suggestion.english}
+                    onClick={() => handleSuggestionClick(suggestion.english)}
                     className={`px-4 py-3 cursor-pointer transition-colors border-b border-gray-700 last:border-b-0 ${
                       index === selectedIndex
                         ? "bg-orange-500/20 text-orange-400"
@@ -230,12 +238,30 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
                     }`}
                     whileHover={{ x: 4 }}
                   >
-                    <div className="flex items-center gap-2">
-                      <Search className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium">{suggestion}</span>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <Search className="w-4 h-4 text-gray-500" />
+                        {/* Nome em português (destaque) */}
+                        <span className="font-medium text-white">
+                          {suggestion.displayName}
+                        </span>
+                      </div>
+                      {/* Nome em inglês (secundário) se diferente */}
+                      {suggestion.portuguese && (
+                        <span className="text-gray-400 text-sm ml-6">
+                          {suggestion.english}
+                        </span>
+                      )}
                     </div>
                   </motion.div>
                 ))}
+                
+                {isLoadingSuggestions && (
+                  <div className="px-4 py-3 text-gray-400 text-sm flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Buscando traduções...
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
