@@ -8,6 +8,9 @@ import ArtSelector from "../components/deck/ArtSelector";
 import DeleteQuantityDialog from "../components/deck/DeleteQuantityDialog";
 import TradeModal from "../components/deck/TradeModal";
 import BuyRequestModal from "../components/deck/BuyRequestModal";
+import ImportDeckModal from "../components/deck/ImportDeckModal";
+import ExportDeckModal from "../components/deck/ExportDeckModal";
+import DeckSettingsMenu from "../components/deck/DeckSettingsMenu";
 import { Button } from "../components/ui/button";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { AlertCircle } from "lucide-react";
@@ -53,6 +56,10 @@ const Trade = () => {
   const [selectedCards, setSelectedCards] = useState([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [cardsToDelete, setCardsToDelete] = useState([]);
+  
+  // Estados para import/export
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   
   // Estados da SearchBar
   const [query, setQuery] = useState("");
@@ -233,6 +240,83 @@ const Trade = () => {
     console.log("🎨 Abrindo ArtSelector - deck próprio:", card.card_name);
     setSelectedCardForArt(card);
     setShowArtSelector(true);
+  };
+
+  const handleImportDeck = async (cards) => {
+    console.log("📥 [IMPORT TRADE] Iniciando importação de", cards.length, "cartas");
+    
+    if (!addCard || !updateCard) {
+      console.error("❌ [IMPORT] Funções addCard/updateCard não disponíveis!");
+      alert("Erro: Não foi possível adicionar cartas. Tente recarregar a página.");
+      return;
+    }
+    
+    const existingCardsMap = new Map();
+    (deckCards || []).forEach(card => {
+      existingCardsMap.set(card.scryfall_id, card);
+    });
+    
+    let addedCount = 0;
+    let updatedCount = 0;
+    let errorCount = 0;
+    
+    for (let i = 0; i < cards.length; i++) {
+      const cardData = cards[i];
+      
+      try {
+        const response = await fetch(
+          `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardData.name)}`
+        );
+        
+        if (response.ok) {
+          const cardInfo = await response.json();
+          const existingCard = existingCardsMap.get(cardInfo.id);
+          
+          if (existingCard) {
+            const newQuantity = existingCard.quantity + cardData.quantity;
+            updateCard({
+              cardId: existingCard.id,
+              updates: { quantity: newQuantity }
+            });
+            existingCard.quantity = newQuantity;
+            updatedCount++;
+          } else {
+            addCard({
+              scryfall_id: cardInfo.id,
+              card_name: cardInfo.name,
+              image_url: cardInfo.image_uris?.normal || cardInfo.card_faces?.[0]?.image_uris?.normal || "",
+              mana_cost: cardInfo.mana_cost || "",
+              type_line: cardInfo.type_line || "",
+              oracle_text: cardInfo.oracle_text || "",
+              quantity: cardData.quantity,
+              acquired: false,
+              card_faces: cardInfo.card_faces || null,
+              colors: cardInfo.colors || [],
+              color_identity: cardInfo.color_identity || [],
+              cmc: cardInfo.cmc || 0,
+              rarity: cardInfo.rarity || "",
+              set_code: cardInfo.set || "",
+              collector_number: cardInfo.collector_number || "",
+            });
+            existingCardsMap.set(cardInfo.id, { id: null, scryfall_id: cardInfo.id, quantity: cardData.quantity });
+            addedCount++;
+          }
+          await new Promise(resolve => setTimeout(resolve, 50));
+        } else if (response.status === 429) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          i--;
+          continue;
+        } else {
+          errorCount++;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        errorCount++;
+        console.error(`❌ [IMPORT] Erro ao processar ${cardData.name}:`, error);
+      }
+    }
+    
+    alert(`Importação concluída!\n➕ ${addedCount} cartas adicionadas\n📝 ${updatedCount} quantidades atualizadas${errorCount > 0 ? `\n⚠️ ${errorCount} erros` : ''}`);
   };
 
   const handleSelectArt = async (artData) => {
@@ -855,6 +939,28 @@ const Trade = () => {
         onAddCard={addCard}
         onUpdateCard={updateCard}
         deckId={deckId}
+      />
+
+      {/* Menu de configurações (Import/Export) */}
+      <DeckSettingsMenu
+        onImportClick={() => setShowImportModal(true)}
+        onExportClick={() => setShowExportModal(true)}
+      />
+
+      {/* Modal de importação */}
+      <ImportDeckModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImportDeck}
+      />
+
+      {/* Modal de exportação */}
+      <ExportDeckModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        deckName={tradeDeck?.name || "Trade"}
+        deckFormat="Trade"
+        cards={deckCards || []}
       />
     </div>
   );
