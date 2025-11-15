@@ -9,6 +9,8 @@ import Deckbuilder from "@/pages/Deckbuilder";
 import CreateDeck from "@/pages/CreateDeck";
 import LoginPage from "@/pages/LoginPage";
 import SignUpPage from "@/pages/SignUpPage";
+import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import FriendDecksPage from "@/pages/FriendDecksPage";
 import Collection from "@/pages/Collection";
 import Trade from "@/pages/Trade";
@@ -104,6 +106,24 @@ function App() {
           element={
             <React.Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-900 text-white">Carregando cadastro...</div>}>
               <SignUpPage />
+            </React.Suspense>
+          } 
+        />
+
+        <Route 
+          path="/forgot-password" 
+          element={
+            <React.Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-900 text-white">Carregando...</div>}>
+              <ForgotPasswordPage />
+            </React.Suspense>
+          } 
+        />
+
+        <Route 
+          path="/reset-password" 
+          element={
+            <React.Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-900 text-white">Carregando...</div>}>
+              <ResetPasswordPage />
             </React.Suspense>
           } 
         />

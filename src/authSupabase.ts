@@ -94,6 +94,36 @@ export async function signInWithGoogle() {
   }
 }
 
+// Reset de senha - envia email
+export async function resetPassword(email: string) {
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+
+  if (error) {
+    console.error('❌ Erro ao enviar email de reset:', error);
+    throw error;
+  }
+
+  console.log('✅ Email de reset enviado com sucesso');
+  return data;
+}
+
+// Atualizar senha (após clicar no link do email)
+export async function updatePassword(newPassword: string) {
+  const { data, error } = await supabase.auth.updateUser({
+    password: newPassword
+  });
+
+  if (error) {
+    console.error('❌ Erro ao atualizar senha:', error);
+    throw error;
+  }
+
+  console.log('✅ Senha atualizada com sucesso');
+  return data;
+}
+
 // Logout
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
