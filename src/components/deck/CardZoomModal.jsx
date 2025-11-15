@@ -51,16 +51,6 @@ export default function CardZoomModal({ card, onClose }) {
     ? (card.image_uris?.normal || card.image_url)
     : (currentFace.image_uris?.normal || currentFace.image_url || card.image_uris?.normal || card.image_url);
 
-  // Debug flip cards
-  console.log('🔍 CardZoomModal Debug:', {
-    cardName: card.card_name || card.name,
-    layout: card.layout,
-    isFlipCard,
-    faceIndex,
-    shouldRotate,
-    hasCardFaces: !!card.card_faces
-  });
-
   // Renderizar o modal usando Portal para garantir opacity: 1
   return createPortal(
     <AnimatePresence>

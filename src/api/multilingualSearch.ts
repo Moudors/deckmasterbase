@@ -57,7 +57,49 @@ export async function getMultilingualAutocomplete(query: string): Promise<string
 }
 
 /**
- * 🔍 Detectar se texto está em português
+ * 🔤 Normalizar texto removendo acentuação
+ * Permite buscar "Relampago" ou "Relâmpago" e encontrar a mesma carta
+ */
+function normalizeAccents(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/**
+ * 🇺🇸 Garantir que a carta retornada está em inglês
+ * Se a carta está em outro idioma, busca a versão em inglês pelo oracle_id
+ */
+async function ensureEnglishVersion(card: ScryfallCard): Promise<ScryfallCard> {
+  // Se já está em inglês, retorna direto
+  if (!card.lang || card.lang === 'en') {
+    return card;
+  }
+
+  console.log(`🔄 Carta em ${card.lang}, buscando versão em inglês...`);
+  
+  try {
+    const res = await fetch(
+      `https://api.scryfall.com/cards/search?q=oracleId:${card.oracle_id}+lang:en&unique=prints&order=released`
+    );
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (data.data && data.data.length > 0) {
+        console.log(`✅ Versão em inglês encontrada: ${data.data[0].name}`);
+        return data.data[0];
+      }
+    }
+  } catch (error) {
+    console.log('⚠️ Não conseguiu buscar versão em inglês, usando carta original');
+  }
+  
+  return card;
+}
+
+/**
+ * �🔍 Detectar se texto está em português
  * Heurística simples: caracteres acentuados comuns em português
  */
 function isPortuguese(text: string): boolean {
@@ -74,7 +116,28 @@ export async function searchCardMultilingual(cardName: string): Promise<Scryfall
 
   const name = cardName.trim();
 
-  // ✅ ESTRATÉGIA 0: Se está em português, traduzir para inglês primeiro
+  // 🔤 Normalizar busca para permitir acentos opcionais
+  const normalizedName = normalizeAccents(name);
+  const hasAccents = name !== normalizedName;
+  
+  // ✅ ESTRATÉGIA 0A: Se tem acentos, tentar buscar sem acentos primeiro
+  if (hasAccents) {
+    console.log(`🔤 Normalizando acentos: "${name}" → "${normalizedName}"`);
+    try {
+      const res = await fetch(
+        `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(normalizedName)}`
+      );
+      if (res.ok) {
+        const card = await res.json();
+        console.log('✅ Carta encontrada via busca sem acentos:', card.name);
+        return card;
+      }
+    } catch (error) {
+      console.log('⏭️ Busca sem acentos falhou, tentando próxima estratégia...');
+    }
+  }
+
+  // ✅ ESTRATÉGIA 0B: Se está em português, traduzir para inglês
   if (isPortuguese(name)) {
     console.log('🇧🇷 Detectado texto em português:', name);
     try {
@@ -119,7 +182,7 @@ export async function searchCardMultilingual(cardName: string): Promise<Scryfall
       const data = await res.json();
       if (data.data && data.data.length > 0) {
         console.log('✅ Carta encontrada via exact search:', data.data[0].name);
-        return data.data[0];
+        return await ensureEnglishVersion(data.data[0]);
       }
     }
   } catch (error) {
@@ -151,7 +214,7 @@ export async function searchCardMultilingual(cardName: string): Promise<Scryfall
       const data = await res.json();
       if (data.data && data.data.length > 0) {
         console.log('✅ Carta encontrada via foreign search:', data.data[0].name);
-        return data.data[0];
+        return await ensureEnglishVersion(data.data[0]);
       }
     }
   } catch (error) {
@@ -167,11 +230,30 @@ export async function searchCardMultilingual(cardName: string): Promise<Scryfall
       const data = await res.json();
       if (data.data && data.data.length > 0) {
         console.log('✅ Carta encontrada via printed_name search:', data.data[0].name);
-        return data.data[0];
+        return await ensureEnglishVersion(data.data[0]);
       }
     }
   } catch (error) {
-    console.log('❌ Todas as estratégias falharam');
+    console.log('⏭️ Printed_name search falhou, tentando próxima estratégia...');
+  }
+
+  // ✅ Estratégia 6: Busca normalizada (sem acentos) em nomes estrangeiros
+  if (hasAccents) {
+    console.log(`🔤 Tentando busca foreign sem acentos: "${normalizedName}"`);
+    try {
+      const res = await fetch(
+        `https://api.scryfall.com/cards/search?q=foreign:"${encodeURIComponent(normalizedName)}"&unique=cards`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data && data.data.length > 0) {
+          console.log('✅ Carta encontrada via foreign search sem acentos:', data.data[0].name);
+          return await ensureEnglishVersion(data.data[0]);
+        }
+      }
+    } catch (error) {
+      console.log('❌ Todas as estratégias falharam');
+    }
   }
 
   console.error(`❌ Carta "${name}" não encontrada em nenhuma estratégia`);

@@ -9,6 +9,7 @@ import AdvancedSearchForm from "./AdvancedSearchForm";
 import SearchResultsGrid from "./SearchResultsGrid";
 import CardZoomModal from "./CardZoomModal";
 import { X } from "lucide-react";
+import { searchCardMultilingual } from "@/api/multilingualSearch";
 
 interface AdvancedSearchPageProps {
   onClose: () => void;
@@ -64,11 +65,39 @@ export default function AdvancedSearchPage({ onClose }: AdvancedSearchPageProps)
 
   async function handleSearch(query: string) {
     try {
-      const res = await fetch(
-        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}`
-      );
-      const data = await res.json();
-      setCards(data.data || []);
+      // 🌍 Busca multilíngue: Se a query é apenas um nome (sem operadores Scryfall)
+      const isSimpleName = !query.includes(':') && !query.includes('=') && !query.includes('>') && !query.includes('<');
+      
+      if (isSimpleName) {
+        console.log('🌍 Usando busca multilíngue para:', query);
+        const card = await searchCardMultilingual(query);
+        
+        if (card) {
+          // Buscar todas as versões desta carta
+          const res = await fetch(
+            `https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(card.name)}"`
+          );
+          const data = await res.json();
+          setCards(data.data || [card]);
+        } else {
+          console.log('❌ Carta não encontrada, tentando busca normal...');
+          // Fallback para busca normal
+          const res = await fetch(
+            `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}`
+          );
+          const data = await res.json();
+          setCards(data.data || []);
+        }
+      } else {
+        // Busca avançada com filtros (usa query Scryfall diretamente)
+        console.log('🔍 Busca avançada com filtros:', query);
+        const res = await fetch(
+          `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}`
+        );
+        const data = await res.json();
+        setCards(data.data || []);
+      }
+      
       setIsFilterOpen(false); // Fecha o filtro após buscar
     } catch (err) {
       console.error("Erro ao buscar cartas:", err);

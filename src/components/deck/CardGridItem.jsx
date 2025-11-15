@@ -96,18 +96,6 @@ function CardGridItem({
   const isFlipCard = card.layout === "flip";
   const currentFace = hasMultipleFaces ? card.card_faces[currentFaceIndex] : card;
   const shouldRotate = isFlipCard && currentFaceIndex === 1;
-
-  // Debug flip cards
-  if (isFlipCard || hasMultipleFaces) {
-    console.log('🎴 CardGridItem Debug:', {
-      cardName: card.card_name || card.name,
-      layout: card.layout,
-      isFlipCard,
-      hasMultipleFaces,
-      currentFaceIndex,
-      shouldRotate
-    });
-  }
   
   // 🖼️ Lógica de URL de imagem para diferentes tipos de cartas dupla face
   let displayImageUrl;

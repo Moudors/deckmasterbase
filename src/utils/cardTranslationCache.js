@@ -83,16 +83,22 @@ class CardTranslationCache {
   async findCardByName(searchName) {
     const translations = await this.loadTranslations();
     const lowerSearch = searchName.toLowerCase().trim();
+    const normalizedSearch = this._normalizeText(searchName);
     
     for (const [englishName, card] of Object.entries(translations)) {
-      // Verifica nome em inglês
-      if (card.english.toLowerCase() === lowerSearch) {
+      const normalizedEnglish = this._normalizeText(card.english);
+      
+      // Verifica nome em inglês (com ou sem acentos)
+      if (card.english.toLowerCase() === lowerSearch || 
+          normalizedEnglish === normalizedSearch) {
         return card;
       }
       
-      // Verifica traduções
+      // Verifica traduções (com ou sem acentos)
       for (const translation of Object.values(card.translations)) {
-        if (translation.toLowerCase() === lowerSearch) {
+        const normalizedTranslation = this._normalizeText(translation);
+        if (translation.toLowerCase() === lowerSearch ||
+            normalizedTranslation === normalizedSearch) {
           return card;
         }
       }
@@ -105,6 +111,7 @@ class CardTranslationCache {
   async findCardsStartingWith(prefix, language = 'pt-BR', limit = 10) {
     const translations = await this.loadTranslations();
     const lowerPrefix = prefix.toLowerCase().trim();
+    const normalizedPrefix = this._normalizeText(prefix);
     const results = [];
 
     if (!lowerPrefix) return results;
@@ -114,7 +121,12 @@ class CardTranslationCache {
 
       // Verifica no idioma especificado
       const translatedName = card.translations[language] || card.english;
-      if (translatedName.toLowerCase().startsWith(lowerPrefix)) {
+      const normalizedTranslated = this._normalizeText(translatedName);
+      const normalizedEnglish = this._normalizeText(card.english);
+      
+      // Busca com ou sem acentos
+      if (translatedName.toLowerCase().startsWith(lowerPrefix) ||
+          normalizedTranslated.startsWith(normalizedPrefix)) {
         results.push({
           english: card.english,
           translated: translatedName,
@@ -124,7 +136,9 @@ class CardTranslationCache {
       }
 
       // Se não encontrou no idioma especificado, verifica em inglês
-      if (language !== 'en' && card.english.toLowerCase().startsWith(lowerPrefix)) {
+      if (language !== 'en' && 
+          (card.english.toLowerCase().startsWith(lowerPrefix) ||
+           normalizedEnglish.startsWith(normalizedPrefix))) {
         results.push({
           english: card.english,
           translated: translatedName,
@@ -136,10 +150,20 @@ class CardTranslationCache {
     return results;
   }
 
+  // Normaliza texto removendo acentos para comparação flexível
+  _normalizeText(text) {
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
   // Busca cartas que contêm o texto (para busca mais flexível)
   async searchCards(searchText, language = 'pt-BR', limit = 20) {
     const translations = await this.loadTranslations();
     const lowerSearch = searchText.toLowerCase().trim();
+    const normalizedSearch = this._normalizeText(searchText);
     const results = [];
 
     if (!lowerSearch) return results;
@@ -148,10 +172,14 @@ class CardTranslationCache {
       if (results.length >= limit) break;
 
       const translatedName = card.translations[language] || card.english;
+      const normalizedTranslated = this._normalizeText(translatedName);
+      const normalizedEnglish = this._normalizeText(card.english);
       
-      // Verifica se contém o texto
+      // Verifica se contém o texto (com ou sem acentos)
       if (translatedName.toLowerCase().includes(lowerSearch) || 
-          card.english.toLowerCase().includes(lowerSearch)) {
+          card.english.toLowerCase().includes(lowerSearch) ||
+          normalizedTranslated.includes(normalizedSearch) ||
+          normalizedEnglish.includes(normalizedSearch)) {
         results.push({
           english: card.english,
           translated: translatedName,

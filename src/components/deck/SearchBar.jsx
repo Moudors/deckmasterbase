@@ -70,8 +70,14 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
         
         // 🔄 Fallback: Se não encontrou no cache, busca no Scryfall
         console.log('🔍 Nenhum resultado no cache, buscando no Scryfall');
+        
+        // Normalizar query removendo acentos para autocomplete
+        const normalizedQuery = query
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '');
+        
         const response = await fetch(
-          `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
+          `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(normalizedQuery)}`
         );
         const data = await response.json();
         const englishSuggestions = data.data || [];
