@@ -28,6 +28,10 @@ export default function CardZoomModal({ card, onClose, onAddToDeck }: CardZoomMo
   }
 
   const currentFace = card.card_faces ? card.card_faces[faceIndex] : card;
+  
+  // Detecta cartas flip
+  const isFlipCard = card.layout === "flip";
+  const shouldRotate = isFlipCard && faceIndex === 1;
 
   function handleAddClick() {
     if (onAddToDeck) {
@@ -47,14 +51,23 @@ export default function CardZoomModal({ card, onClose, onAddToDeck }: CardZoomMo
         {/* Carta */}
         <div className="relative w-80 sm:w-96 overflow-hidden rounded-lg shadow-lg">
           <img
-            src={currentFace.image_uris?.normal || card.image_uris?.normal}
+            src={isFlipCard ? card.image_uris?.normal : (currentFace.image_uris?.normal || card.image_uris?.normal)}
             alt={card.name}
-            className="w-full rounded-lg"
+            className="w-full rounded-lg transition-transform duration-500"
+            style={{
+              transform: shouldRotate ? 'rotate(180deg)' : 'rotate(0deg)',
+              transformOrigin: 'center center'
+            }}
             loading="lazy"
             decoding="async"
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           />
+          {isFlipCard && (
+            <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+              {faceIndex === 0 ? '↻' : '↺'} Flip
+            </div>
+          )}
         </div>
 
         {/* Botão de adicionar */}

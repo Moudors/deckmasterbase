@@ -91,14 +91,35 @@ function CardGridItem({
     };
   }, []);
 
-  // 🔄 Determinar se é carta dupla face
+  // 🔄 Determinar se é carta dupla face ou flip
   const hasMultipleFaces = card.card_faces && card.card_faces.length > 1;
+  const isFlipCard = card.layout === "flip";
   const currentFace = hasMultipleFaces ? card.card_faces[currentFaceIndex] : card;
+  const shouldRotate = isFlipCard && currentFaceIndex === 1;
+
+  // Debug flip cards
+  if (isFlipCard || hasMultipleFaces) {
+    console.log('🎴 CardGridItem Debug:', {
+      cardName: card.card_name || card.name,
+      layout: card.layout,
+      isFlipCard,
+      hasMultipleFaces,
+      currentFaceIndex,
+      shouldRotate
+    });
+  }
   
   // 🖼️ Lógica de URL de imagem para diferentes tipos de cartas dupla face
   let displayImageUrl;
   
-  if (hasMultipleFaces) {
+  if (isFlipCard) {
+    // Cartas flip usam uma única imagem (não tem image_uris nas faces)
+    displayImageUrl = 
+      card.image_url || 
+      card.image_uris?.normal || 
+      card.image_uris?.large ||
+      card.image_uris?.png;
+  } else if (hasMultipleFaces) {
     // Para cartas dupla face, tentar pegar a imagem da face atual
     // Suporta diferentes layouts do Scryfall (transform, modal_dfc, etc)
     displayImageUrl = 
@@ -257,9 +278,13 @@ function CardGridItem({
           key={`${card.id}-${currentFaceIndex}-${displayImageUrl?.split('/').pop()}-${card.updated_at || card.scryfall_id}`}
           src={cachedImageUrl || displayImageUrl}
           alt={currentFace.name || card.card_name}
-          className={`card-image w-full h-auto rounded-lg transition-opacity duration-300 ${
+          className={`card-image w-full h-auto rounded-lg transition-all duration-500 ${
             isTransparent ? "opacity-50" : "opacity-100"
           }`}
+          style={{
+            transform: shouldRotate ? 'rotate(180deg)' : 'rotate(0deg)',
+            transformOrigin: 'center center'
+          }}
           draggable={false}
           onContextMenu={(e) => e.preventDefault()}
           loading="lazy"
@@ -273,25 +298,34 @@ function CardGridItem({
               e.stopPropagation();
               toggleFace();
             }}
-            className="absolute top-2 right-2 w-7 h-7 bg-orange-500/90 hover:bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-10"
-            aria-label="Alternar face da carta"
-            title={`Face ${currentFaceIndex + 1}/${card.card_faces.length}: ${currentFace.name || 'Face ' + (currentFaceIndex + 1)}`}
+            className={`absolute top-2 right-2 w-7 h-7 ${isFlipCard ? 'bg-blue-500/90 hover:bg-blue-500' : 'bg-orange-500/90 hover:bg-orange-500'} text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-10`}
+            aria-label={isFlipCard ? "Flip card (girar 180°)" : "Alternar face da carta"}
+            title={isFlipCard 
+              ? `Flip ${currentFaceIndex === 0 ? '↻' : '↺'}: ${currentFace.name || 'Face ' + (currentFaceIndex + 1)}`
+              : `Face ${currentFaceIndex + 1}/${card.card_faces.length}: ${currentFace.name || 'Face ' + (currentFaceIndex + 1)}`
+            }
             data-card-id={card.id}
             data-face-index={currentFaceIndex}
             data-testid="dual-face-toggle"
           >
-            <svg
-              className="w-3 h-3"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-white text-orange-500 text-xs rounded-full flex items-center justify-center font-bold leading-none">
+            {isFlipCard ? (
+              // Ícone para flip (rotação)
+              <span className="text-xs font-bold">{currentFaceIndex === 0 ? '↻' : '↺'}</span>
+            ) : (
+              // Ícone para transform/modal
+              <svg
+                className="w-3 h-3"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+            <span className={`absolute -bottom-1 -right-1 w-3 h-3 bg-white ${isFlipCard ? 'text-blue-500' : 'text-orange-500'} text-xs rounded-full flex items-center justify-center font-bold leading-none`}>
               {currentFaceIndex + 1}
             </span>
           </button>

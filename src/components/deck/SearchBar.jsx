@@ -134,6 +134,7 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
         created_at: new Date(),
         // Adicionar card_faces para suportar dupla face
         card_faces: cardData.card_faces || null,
+        layout: cardData.layout || "normal", // ✅ Adicionar layout para flip cards
       };
 
       // Check if this card already exists in the deck (by scryfall_id)

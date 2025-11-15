@@ -245,6 +245,23 @@ export default function SearchRulesDialog({
     ? result.card_faces[currentFaceIndex]
     : result;
 
+  // Detecta se é carta flip (ex: Erayo) - layout "flip" usa uma única imagem que gira
+  const isFlipCard = (result as any)?.layout === "flip";
+  const shouldRotateImage = isFlipCard && currentFaceIndex === 1;
+  
+  // Debug para verificar se está detectando corretamente
+  if (result) {
+    console.log('🔍 Card Debug:', {
+      name: result.name,
+      layout: (result as any)?.layout,
+      isFlipCard,
+      currentFaceIndex,
+      shouldRotateImage,
+      hasResultImageUris: !!(result as any).image_uris,
+      hasCurrentFaceImageUris: !!currentFace?.image_uris
+    });
+  }
+
   return (
     <Dialog.Root open={isOpen} onOpenChange={onClose}>
       <Dialog.Portal>
@@ -371,23 +388,36 @@ export default function SearchRulesDialog({
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-white/90 rounded-lg p-3 border border-gray-400"
                 >
-                  <div className="flex flex-col sm:flex-row items-start gap-3 mb-3 pb-3 border-b border-gray-300">
-                    {currentFace.image_uris?.normal && (
-                      <img
-                        src={currentFace.image_uris.normal}
-                        alt={currentFace.name}
-                        className="w-32 sm:w-40 h-auto rounded-lg shadow-lg mx-auto sm:mx-0 cursor-pointer"
-                        onTouchStart={handleTouchStart}
-                        onTouchEnd={handleTouchEnd}
-                        draggable={false}
-                      />
+                  <div className="flex flex-col items-center gap-3 mb-3 pb-3 border-b border-gray-300">
+                    {/* Cartas flip usam result.image_uris, cartas transform/modal usam currentFace.image_uris */}
+                    {(isFlipCard ? (result as any).image_uris?.normal : currentFace?.image_uris?.normal) && (
+                      <div className="relative flex justify-center w-full">
+                        <img
+                          src={isFlipCard ? (result as any).image_uris.normal : currentFace?.image_uris?.normal}
+                          alt={currentFace?.name || ''}
+                          className="w-48 sm:w-56 h-auto rounded-lg shadow-lg cursor-pointer transition-all duration-500"
+                          style={{
+                            transform: shouldRotateImage ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transformOrigin: 'center center'
+                          }}
+                          onTouchStart={handleTouchStart}
+                          onTouchEnd={handleTouchEnd}
+                          onClick={handleNextFace}
+                          draggable={false}
+                        />
+                        {isFlipCard && (
+                          <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+                            {currentFaceIndex === 0 ? '↻' : '↺'} Flip
+                          </div>
+                        )}
+                      </div>
                     )}
-                    <div className="flex-1 w-full">
-                      <h3 className="text-base sm:text-lg font-bold text-black mb-1 text-center sm:text-left">
-                        {currentFace.name}
+                    <div className="flex-1 w-full text-center">
+                      <h3 className="text-base sm:text-lg font-bold text-black mb-1">
+                        {currentFace?.name}
                       </h3>
                       <p className="text-xs sm:text-sm text-gray-700">
-                        {currentFace.type_line ?? ""}
+                        {currentFace?.type_line ?? ""}
                       </p>
                     </div>
                   </div>

@@ -45,7 +45,21 @@ export default function CardZoomModal({ card, onClose }) {
   };
 
   const currentFace = card.card_faces ? card.card_faces[faceIndex] : card;
-  const imageUrl = currentFace.image_uris?.normal || currentFace.image_url || card.image_uris?.normal || card.image_url;
+  const isFlipCard = card.layout === "flip";
+  const shouldRotate = isFlipCard && faceIndex === 1;
+  const imageUrl = isFlipCard 
+    ? (card.image_uris?.normal || card.image_url)
+    : (currentFace.image_uris?.normal || currentFace.image_url || card.image_uris?.normal || card.image_url);
+
+  // Debug flip cards
+  console.log('🔍 CardZoomModal Debug:', {
+    cardName: card.card_name || card.name,
+    layout: card.layout,
+    isFlipCard,
+    faceIndex,
+    shouldRotate,
+    hasCardFaces: !!card.card_faces
+  });
 
   // Renderizar o modal usando Portal para garantir opacity: 1
   return createPortal(
@@ -70,33 +84,48 @@ export default function CardZoomModal({ card, onClose }) {
           <img
             src={imageUrl}
             alt={card.card_name || card.name}
-            className="w-full rounded-lg shadow-2xl"
-            style={{ opacity: 1 }}
+            className="w-full rounded-lg shadow-2xl transition-transform duration-500"
+            style={{ 
+              opacity: 1,
+              transform: shouldRotate ? 'rotate(180deg)' : 'rotate(0deg)',
+              transformOrigin: 'center center'
+            }}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           />
+
+          {/* Blue badge for flip cards */}
+          {isFlipCard && (
+            <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+              {faceIndex === 0 ? '↻' : '↺'} Flip
+            </div>
+          )}
 
           {/* Botão de alternar face (canto inferior direito) */}
           {card.card_faces && card.card_faces.length > 1 && (
             <button
               onClick={toggleFace}
-              className="absolute -bottom-1 -right-1 w-10 h-10 bg-white/40 rounded-full shadow-lg flex items-center justify-center hover:bg-white/60 transition-all hover:scale-110 active:scale-95"
-              aria-label="Alternar face da carta"
-              title="Virar carta"
+              className={`absolute -bottom-1 -right-1 w-10 h-10 ${isFlipCard ? 'bg-blue-500/90 hover:bg-blue-500' : 'bg-white/40 hover:bg-white/60'} rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95`}
+              aria-label={isFlipCard ? "Flip card (girar 180°)" : "Alternar face da carta"}
+              title={isFlipCard ? "Flip" : "Virar carta"}
             >
-              <svg
-                className="w-5 h-5 text-gray-800"
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                {/* Ícone de rotação/flip */}
-                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-orange-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+              {isFlipCard ? (
+                <span className="text-white text-lg font-bold">{faceIndex === 0 ? '↻' : '↺'}</span>
+              ) : (
+                <svg
+                  className="w-5 h-5 text-gray-800"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  {/* Ícone de rotação/flip */}
+                  <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              )}
+              <span className={`absolute -top-1 -right-1 w-5 h-5 ${isFlipCard ? 'bg-white text-blue-500' : 'bg-orange-500 text-white'} text-xs rounded-full flex items-center justify-center font-bold`}>
                 {faceIndex + 1}
               </span>
             </button>

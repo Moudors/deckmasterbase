@@ -410,6 +410,7 @@ const Collection = () => {
         quantity: 1,
         created_at: new Date(),
         card_faces: cardData.card_faces || null,
+        layout: cardData.layout || "normal", // ✅ Adicionar layout para flip cards
       };
 
       const currentCards = queryClient.getQueryData(["cards", deckId]) || [];

@@ -24,6 +24,7 @@ export default function ArtSelector({
   const [isLoading, setIsLoading] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [newQuantity, setNewQuantity] = useState(1);
+  const [flipStates, setFlipStates] = useState({}); // Track flip state for each card
   const queryClient = useQueryClient();
 
   // 🔄 Buscar versões da carta
@@ -159,9 +160,21 @@ export default function ArtSelector({
             <div className="overflow-y-auto max-h-[60vh] pr-2">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {versions.map((version) => {
+                  const isFlipCard = version.layout === "flip";
+                  const currentFaceIndex = flipStates[version.id] || 0;
+                  const shouldRotate = isFlipCard && currentFaceIndex === 1;
+                  
                   const imageUrl =
                     version.image_uris?.normal || version.card_faces?.[0]?.image_uris?.normal;
                   const isSelected = selectedVersion === version.id;
+
+                  const handleFlipToggle = (e, versionId) => {
+                    e.stopPropagation();
+                    setFlipStates(prev => ({
+                      ...prev,
+                      [versionId]: prev[versionId] === 1 ? 0 : 1
+                    }));
+                  };
 
                   return (
                     <motion.div
@@ -178,10 +191,22 @@ export default function ArtSelector({
                       <img
                         src={imageUrl}
                         alt={version.name}
-                        className="w-full h-auto select-none"
+                        className="w-full h-auto select-none transition-transform duration-500"
+                        style={{
+                          transform: shouldRotate ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transformOrigin: 'center center'
+                        }}
                         onContextMenu={(e) => e.preventDefault()}
                         draggable={false}
                       />
+                      {isFlipCard && (
+                        <button
+                          onClick={(e) => handleFlipToggle(e, version.id)}
+                          className="absolute top-2 left-2 bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded-full z-10 transition-colors"
+                        >
+                          {currentFaceIndex === 0 ? '↻' : '↺'} Flip
+                        </button>
+                      )}
                       {isSelected && (
                         <div className="absolute top-2 right-2 w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
                           <Check className="w-5 h-5 text-white" />

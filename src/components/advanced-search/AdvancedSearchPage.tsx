@@ -141,6 +141,7 @@ export default function AdvancedSearchPage({ onClose }: AdvancedSearchPageProps)
         mana_cost: selectedCardForDeck.mana_cost || "",
         type_line: selectedCardForDeck.type_line || "",
         oracle_text: selectedCardForDeck.oracle_text || "",
+        layout: selectedCardForDeck.layout || "normal", // ✅ Adicionar layout para flip cards
       });
 
       console.log("✅ Carta adicionada ao deck com ID:", cardId);
