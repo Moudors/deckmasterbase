@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Globe } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { deckCardOperations } from "../../lib/supabaseOperations";
 import { useVisualTranslation } from "../../hooks/useVisualTranslation";
 import { searchCardMultilingual } from "../../api/multilingualSearch";
 import { getPortugueseAutocomplete } from "../../api/mtgioSearch";
+import { searchCards, findCardByName } from "../../utils/cardTranslationCache";
 
 export default function SearchBar({ deckId, isSearching, setIsSearching }) {
   const [query, setQuery] = useState("");
@@ -42,24 +43,23 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
 
       setIsLoadingSuggestions(true);
       try {
-        // � SEMPRE TENTAR BUSCAR EM PORTUGUÊS PRIMEIRO
-        // A API Scryfall suporta busca em PT mesmo sem acentos!
-        console.log('🔍 Buscando sugestões para:', query);
-        const ptResults = await getPortugueseAutocomplete(query);
+        console.log('🌍 Buscando sugestões multilíngue para:', query);
         
-        if (ptResults.length > 0) {
-          // ✅ Encontrou resultados em português!
-          console.log(`🇧🇷 Encontrou ${ptResults.length} resultados em PT`);
+        // 🚀 BUSCA NO CACHE LOCAL (INSTANTÂNEA - SEM REQUISIÇÕES!)
+        const cacheResults = await searchCards(query, 'pt-BR', 15);
+        
+        if (cacheResults.length > 0) {
+          console.log(`⚡ Encontrou ${cacheResults.length} resultados no cache local`);
           
-          // Extrair apenas nomes em inglês para compatibilidade
-          const englishNames = ptResults.map(r => r.english);
+          // Extrair nomes em inglês para compatibilidade
+          const englishNames = cacheResults.map(r => r.english);
           setSuggestions(englishNames);
           
-          // Usar os pares PT/EN diretamente
-          const translated = ptResults.map(r => ({
+          // Usar traduções do cache
+          const translated = cacheResults.map(r => ({
             english: r.english,
-            portuguese: r.portuguese,
-            displayName: r.portuguese
+            portuguese: r.translated,
+            displayName: r.translated
           }));
           setTranslatedSuggestions(translated);
           setShowSuggestions(true);
@@ -68,8 +68,8 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
           return;
         }
         
-        // 🔄 Fallback: Buscar em inglês no Scryfall
-        console.log('🇺🇸 Nenhum resultado em PT, buscando em inglês');
+        // 🔄 Fallback: Se não encontrou no cache, busca no Scryfall
+        console.log('🔍 Nenhum resultado no cache, buscando no Scryfall');
         const response = await fetch(
           `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
         );
@@ -78,8 +78,15 @@ export default function SearchBar({ deckId, isSearching, setIsSearching }) {
         
         setSuggestions(englishSuggestions);
         
-        // 🌍 Traduzir para exibição visual
-        const translated = await translateSuggestions(englishSuggestions);
+        // Traduzir usando cache primeiro
+        const translated = await Promise.all(englishSuggestions.map(async (name) => {
+          const cardInfo = await findCardByName(name);
+          return {
+            english: name,
+            portuguese: cardInfo?.translated || name,
+            displayName: cardInfo?.translated || name
+          };
+        }));
         setTranslatedSuggestions(translated);
         
         setShowSuggestions(true);

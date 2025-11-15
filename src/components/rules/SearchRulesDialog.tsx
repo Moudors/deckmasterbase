@@ -7,10 +7,11 @@ import React, {
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Input } from "@/components/ui/input";
-import { Search, Loader2, Book, X } from "lucide-react";
+import { Search, Loader2, Book, X, Globe } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { renderManaSymbols } from "@/utils/manaSymbols";
 import { traduzirCarta, translateText, ScryfallCard } from "@/services/translator";
+import { searchCards, findCardByName } from "@/utils/cardTranslationCache";
 
 // 🔧 Funções de API
 export async function getAutocomplete(query: string): Promise<string[]> {
@@ -128,7 +129,7 @@ export default function SearchRulesDialog({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Autocomplete com debounce
+  // Autocomplete com cache local multilíngue
   useEffect(() => {
     if (query.trim().length < 2) {
       setSuggestions([]);
@@ -141,10 +142,23 @@ export default function SearchRulesDialog({
 
     const debounceTimer = setTimeout(async () => {
       try {
-        const data = await getAutocomplete(query);
-        setSuggestions(data);
-        setShowSuggestions(true);
-        setSelectedIndex(-1);
+        // 🚀 Busca instantânea no cache local (sem requisições!)
+        console.log('🌍 Buscando regras com cache multilíngue para:', query);
+        const cacheResults = await searchCards(query, 'pt-BR', 15);
+        
+        if (cacheResults.length > 0) {
+          console.log(`⚡ Encontrou ${cacheResults.length} resultados no cache local`);
+          setSuggestions(cacheResults.map(r => r.english));
+          setShowSuggestions(true);
+          setSelectedIndex(-1);
+        } else {
+          // Fallback: API Scryfall se não encontrou no cache
+          console.log('🔍 Nenhum resultado no cache, buscando no Scryfall');
+          const data = await getAutocomplete(query);
+          setSuggestions(data);
+          setShowSuggestions(true);
+          setSelectedIndex(-1);
+        }
       } catch (err) {
         console.error(err);
       } finally {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Filter, Trash2 } from "lucide-react";
+import { X, Filter, Trash2, Settings } from "lucide-react";
 import { useAuthState } from "../hooks/useAuthState";
 import CardGridItem from "../components/deck/CardGridItem";
 import ArtSelector from "../components/deck/ArtSelector";
@@ -15,9 +15,10 @@ import { AlertCircle } from "lucide-react";
 import { useConnectivity } from "../lib/connectivityManager";
 import { useDecks, useDeckCards } from "../lib/useUnifiedDecks";
 import { Input } from "../components/ui/input";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Globe } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { deckCardOperations } from "../lib/supabaseOperations";
+import { searchCards, findCardByName } from "../utils/cardTranslationCache";
 
 const Collection = () => {
   const navigate = useNavigate();
@@ -57,6 +58,7 @@ const Collection = () => {
   // Estados para import/export
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   
   // Estados da SearchBar
   const [query, setQuery] = useState("");
@@ -74,6 +76,7 @@ const Collection = () => {
   const inputRef = useRef(null);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
+  const settingsButtonRef = useRef(null);
 
   // Verifica se usuário tem permissão
   const isViewOnly = !canEdit;
@@ -337,24 +340,37 @@ const Collection = () => {
       
       try {
         if (isFilterMode) {
-          // 🔍 Modo filtro: busca apenas nas cartas da coleção
-          const filtered = deckCards
-            .filter(card => 
-              card.card_name.toLowerCase().includes(query.toLowerCase())
-            )
-            .map(card => card.card_name)
-            .slice(0, 10); // Limita a 10 resultados
+          // 🔍 Modo filtro: busca nas cartas da coleção usando cache multilíngue
+          const cacheResults = await searchCards(query, 'pt-BR', 50);
+          const deckCardNames = deckCards.map(c => c.card_name.toLowerCase());
+          
+          // Filtrar apenas cartas que estão na coleção
+          const filtered = cacheResults
+            .filter(result => deckCardNames.includes(result.english.toLowerCase()))
+            .map(result => result.english)
+            .slice(0, 10);
           
           setSuggestions(filtered);
           setShowSuggestions(filtered.length > 0);
         } else {
-          // 🌐 Modo busca: API Scryfall
-          const response = await fetch(
-            `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
-          );
-          const data = await response.json();
-          setSuggestions(data.data || []);
-          setShowSuggestions(true);
+          // 🚀 Modo busca: Cache local instantâneo (sem requisições!)
+          console.log('🌍 Buscando sugestões multilíngue para:', query);
+          const cacheResults = await searchCards(query, 'pt-BR', 15);
+          
+          if (cacheResults.length > 0) {
+            console.log(`⚡ Encontrou ${cacheResults.length} resultados no cache local`);
+            setSuggestions(cacheResults.map(r => r.english));
+            setShowSuggestions(true);
+          } else {
+            // Fallback: API Scryfall se não encontrou no cache
+            console.log('🔍 Nenhum resultado no cache, buscando no Scryfall');
+            const response = await fetch(
+              `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`
+            );
+            const data = await response.json();
+            setSuggestions(data.data || []);
+            setShowSuggestions(true);
+          }
         }
         setSelectedIndex(-1);
       } catch (error) {
@@ -523,27 +539,48 @@ const Collection = () => {
           </p>
         </div>
 
-        {/* Botão de lixeira */}
+        {/* Botões de ação */}
         {!isViewOnly && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (isSelectionMode && selectedCards.length > 0) {
-                handleDeleteSelected();
-              } else {
-                setIsSelectionMode(!isSelectionMode);
-                setSelectedCards([]);
-              }
-            }}
-            className={`${
-              isSelectionMode && selectedCards.length > 0
-                ? "text-red-500 hover:text-red-400"
-                : "text-gray-400 hover:text-white"
-            }`}
-          >
-            <Trash2 className="w-5 h-5" />
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (isSelectionMode && selectedCards.length > 0) {
+                  handleDeleteSelected();
+                } else {
+                  setIsSelectionMode(!isSelectionMode);
+                  setSelectedCards([]);
+                }
+              }}
+              className={`${
+                isSelectionMode && selectedCards.length > 0
+                  ? "text-red-500 hover:text-red-400"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <Trash2 className="w-5 h-5" />
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="icon"
+              ref={settingsButtonRef}
+              onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+              className="text-gray-400 hover:text-white relative"
+            >
+              <Settings className="w-5 h-5" />
+              
+              {/* Menu dropdown */}
+              <DeckSettingsMenu
+                isOpen={showSettingsMenu}
+                onClose={() => setShowSettingsMenu(false)}
+                onImportClick={() => setShowImportModal(true)}
+                onExportClick={() => setShowExportModal(true)}
+                anchorRef={settingsButtonRef}
+              />
+            </Button>
+          </>
         )}
         {isViewOnly && <div className="w-10" />}
       </div>
