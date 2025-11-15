@@ -437,10 +437,33 @@ const Deckbuilder = () => {
 
   // Handler para importar deck
   const handleImportDeck = async (cards) => {
-    console.log("📥 Importando deck:", cards);
+    console.log("📥 [IMPORT] Iniciando importação de", cards.length, "cartas");
+    console.log("📥 [IMPORT] Dados recebidos:", cards);
+    console.log("📥 [IMPORT] Cartas já no deck:", deckCards?.length || 0);
     
-    for (const cardData of cards) {
+    if (!addCard || !updateCard) {
+      console.error("❌ [IMPORT] Funções addCard/updateCard não disponíveis!");
+      alert("Erro: Não foi possível adicionar cartas. Tente recarregar a página.");
+      return;
+    }
+    
+    // Criar mapa de cartas já existentes no deck (scryfall_id -> card object)
+    const existingCardsMap = new Map();
+    (deckCards || []).forEach(card => {
+      existingCardsMap.set(card.scryfall_id, card);
+    });
+    console.log("📥 [IMPORT] Cartas existentes mapeadas:", existingCardsMap.size);
+    
+    let addedCount = 0;
+    let updatedCount = 0;
+    let errorCount = 0;
+    
+    for (let i = 0; i < cards.length; i++) {
+      const cardData = cards[i];
+      
       try {
+        console.log(`🔍 [IMPORT] ${i + 1}/${cards.length} - Buscando carta: ${cardData.name} (qty: ${cardData.quantity})`);
+        
         // Buscar carta na API do Scryfall
         const response = await fetch(
           `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardData.name)}`
@@ -448,36 +471,95 @@ const Deckbuilder = () => {
         
         if (response.ok) {
           const cardInfo = await response.json();
+          console.log(`✅ [IMPORT] ${i + 1}/${cards.length} - Carta encontrada no Scryfall:`, cardInfo.name);
           
-          // Adicionar carta ao deck
-          await addCard({
-            scryfall_id: cardInfo.id,
-            card_name: cardInfo.name,
-            image_url: cardInfo.image_uris?.normal || cardInfo.card_faces?.[0]?.image_uris?.normal || "",
-            mana_cost: cardInfo.mana_cost || "",
-            type_line: cardInfo.type_line || "",
-            oracle_text: cardInfo.oracle_text || "",
-            quantity: cardData.quantity,
-            acquired: false,
-            card_faces: cardInfo.card_faces || null,
-            colors: cardInfo.colors || [],
-            color_identity: cardInfo.color_identity || [],
-            cmc: cardInfo.cmc || 0,
-            rarity: cardInfo.rarity || "",
-            set_code: cardInfo.set || "",
-            collector_number: cardInfo.collector_number || "",
-          });
+          // Verificar se a carta já existe no deck
+          const existingCard = existingCardsMap.get(cardInfo.id);
           
-          console.log(`✅ Adicionada: ${cardData.quantity}x ${cardInfo.name}`);
+          if (existingCard) {
+            // Carta já existe - AUMENTAR a quantidade
+            const newQuantity = existingCard.quantity + cardData.quantity;
+            console.log(`📝 [IMPORT] ${i + 1}/${cards.length} - Carta já existe, atualizando quantidade: ${existingCard.quantity} + ${cardData.quantity} = ${newQuantity}x ${cardInfo.name}`);
+            
+            updateCard({
+              cardId: existingCard.id,
+              updates: {
+                quantity: newQuantity
+              }
+            });
+            
+            // Atualizar no mapa local para próximas importações na mesma sessão
+            existingCard.quantity = newQuantity;
+            
+            updatedCount++;
+            console.log(`✅ [IMPORT] ${i + 1}/${cards.length} - Quantidade atualizada: ${newQuantity}x ${cardInfo.name}`);
+            
+          } else {
+            // Carta NÃO existe - ADICIONAR nova
+            console.log(`➕ [IMPORT] ${i + 1}/${cards.length} - Adicionando nova carta: ${cardData.quantity}x ${cardInfo.name}`);
+            
+            addCard({
+              scryfall_id: cardInfo.id,
+              card_name: cardInfo.name,
+              image_url: cardInfo.image_uris?.normal || cardInfo.card_faces?.[0]?.image_uris?.normal || "",
+              mana_cost: cardInfo.mana_cost || "",
+              type_line: cardInfo.type_line || "",
+              oracle_text: cardInfo.oracle_text || "",
+              quantity: cardData.quantity,
+              acquired: false,
+              card_faces: cardInfo.card_faces || null,
+              colors: cardInfo.colors || [],
+              color_identity: cardInfo.color_identity || [],
+              cmc: cardInfo.cmc || 0,
+              rarity: cardInfo.rarity || "",
+              set_code: cardInfo.set || "",
+              collector_number: cardInfo.collector_number || "",
+            });
+            
+            // Adicionar ao mapa para evitar duplicatas na mesma importação
+            existingCardsMap.set(cardInfo.id, {
+              id: null, // Não temos o ID ainda, mas não importa
+              scryfall_id: cardInfo.id,
+              quantity: cardData.quantity
+            });
+            
+            addedCount++;
+            console.log(`✅ [IMPORT] ${i + 1}/${cards.length} - Adicionada com sucesso: ${cardData.quantity}x ${cardInfo.name}`);
+          }
+          
+          // Pequeno delay para dar tempo do React Query atualizar a UI
+          await new Promise(resolve => setTimeout(resolve, 50));
+          
+        } else if (response.status === 404) {
+          errorCount++;
+          console.warn(`⚠️ [IMPORT] ${i + 1}/${cards.length} - Carta não encontrada no Scryfall: ${cardData.name}`);
+        } else if (response.status === 429) {
+          console.error(`⛔ [IMPORT] ${i + 1}/${cards.length} - Rate limit atingido! Aguardando 1 segundo...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          i--; // Tentar novamente esta carta
+          continue;
         } else {
-          console.warn(`⚠️ Carta não encontrada: ${cardData.name}`);
+          errorCount++;
+          console.error(`❌ [IMPORT] ${i + 1}/${cards.length} - Erro HTTP ${response.status} para: ${cardData.name}`);
         }
+        
+        // Delay para respeitar rate limit do Scryfall (100ms = 10 req/s)
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
       } catch (error) {
-        console.error(`❌ Erro ao adicionar ${cardData.name}:`, error);
+        errorCount++;
+        console.error(`❌ [IMPORT] ${i + 1}/${cards.length} - Exceção ao processar ${cardData.name}:`, error);
+        console.error(`❌ [IMPORT] Stack trace:`, error.stack);
       }
     }
     
-    console.log("✅ Importação concluída!");
+    console.log(`\n📊 [IMPORT] ===== IMPORTAÇÃO CONCLUÍDA =====`);
+    console.log(`➕ Adicionadas: ${addedCount}`);
+    console.log(`📝 Atualizadas: ${updatedCount}`);
+    console.log(`❌ Erros: ${errorCount}`);
+    console.log(`📊 Total processado: ${addedCount + updatedCount}/${cards.length}`);
+    
+    alert(`Importação concluída!\n➕ ${addedCount} cartas adicionadas\n📝 ${updatedCount} quantidades atualizadas${errorCount > 0 ? `\n⚠️ ${errorCount} erros` : ''}`);
   };
 
   const handleSelectArt = async (artData) => {
